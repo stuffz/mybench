@@ -7,3 +7,6 @@ frontend/dist/
 node_modules/
 .pnpm-store/
 /mybench
+# resources_windows_amd64.syso is committed on purpose (icon/manifest for
+# any windows build); other arches are transient build output.
+/internal/buildinfo/resources_windows_arm64.syso

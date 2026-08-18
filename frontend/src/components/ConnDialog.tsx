@@ -83,6 +83,7 @@ function summary(c: SavedConn): string {
 
 export function ConnDialog() {
   const { saved, openIDs, refreshSaved, openConn, closeConn } = useApp();
+  const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<SavedConn | null>(null);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +92,14 @@ export function ConnDialog() {
   const [tdbs, setTdbs] = useState<TeleportDB[] | null>(null);
 
   const method = editing?.method || "tcp";
+
+  // Errors clear on the next action anyway — also auto-dismiss so a stale
+  // one doesn't sit under the form while the user fixes the cause.
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(null), 6000);
+    return () => clearTimeout(t);
+  }, [error]);
 
   // tsh status is a fast local check; run it while the Teleport method is up.
   useEffect(() => {
@@ -189,8 +198,20 @@ export function ConnDialog() {
     <p className="ml-[33%] pl-2 text-xs text-muted-foreground">{text}</p>
   );
 
+  // Closing the dialog any way (✕, Escape, overlay) discards the in-progress
+  // edit, so reopening starts at the connection list — same as Cancel.
+  const onOpenChange = (o: boolean) => {
+    setOpen(o);
+    if (!o) {
+      setEditing(null);
+      setPassword("");
+      setError(null);
+      setTdbs(null);
+    }
+  };
+
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger className="inline-flex h-8 items-center rounded-md border bg-background px-3 text-xs font-medium hover:bg-muted">
         Connections
       </DialogTrigger>

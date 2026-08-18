@@ -320,13 +320,40 @@ func (s *Service) Close(id string) {
 	oc := s.open[id]
 	delete(s.open, id)
 	s.mu.Unlock()
-	if oc == nil {
-		return
+	if oc != nil {
+		oc.teardown()
 	}
+}
+
+// ServiceShutdown runs when the app quits (wails calls it in GUI and server
+// mode alike): close every open pool and kill its tsh/ssh tunnel so no
+// child process outlives the app.
+func (s *Service) ServiceShutdown() error {
+	s.mu.Lock()
+	open := s.open
+	s.open = map[string]*openConn{}
+	s.mu.Unlock()
+	// Kill tunnels first: the session/pool closes in teardown block until
+	// in-flight queries finish, and wails runs this hook on the UI thread. A
+	// dead tunnel errors those queries out immediately, and the children are
+	// gone even if a close still hangs.
+	for _, oc := range open {
+		if oc.tunnel != nil {
+			oc.tunnel.stop()
+		}
+	}
+	for _, oc := range open {
+		oc.teardown()
+	}
+	return nil
+}
+
+func (oc *openConn) teardown() {
 	oc.mu.Lock()
 	for _, sess := range oc.sessions {
 		_ = sess.Close()
 	}
+	oc.sessions = map[string]*sql.Conn{}
 	oc.mu.Unlock()
 	_ = oc.db.Close()
 	if oc.tunnel != nil {

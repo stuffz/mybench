@@ -33,6 +33,12 @@ tasks:
         vars:
           BUILD_FLAGS: "-tags server,production"
     cmds:
+      # Regenerate the committed syso so info.json/icon changes reach release
+      # exes (generation is byte-deterministic — the tree only dirties when
+      # the inputs actually changed).
+      - task: windows:generate:syso
+        vars:
+          ARCH: amd64
       - GOOS=linux GOARCH=amd64 go build {{.SERVER_FLAGS}} -o {{.BIN_DIR}}/{{.APP_NAME}}-server-linux-amd64
       - GOOS=darwin GOARCH=arm64 go build {{.SERVER_FLAGS}} -o {{.BIN_DIR}}/{{.APP_NAME}}-server-darwin-arm64
       - GOOS=windows GOARCH=amd64 go build {{.SERVER_FLAGS}} -o {{.BIN_DIR}}/{{.APP_NAME}}-server-windows-amd64.exe
@@ -89,18 +95,43 @@ tasks:
       PKGREL:
         sh: sed -n 's/^pkgrel=//p' build/arch/PKGBUILD
       DEB_NAME: '{{.APP_NAME}}_{{.PKGVER}}-{{.PKGREL}}_amd64'
+      # No electron package exists in Ubuntu/Debian repos (the Arch package
+      # depends on repo electron), so the deb bundles the official runtime —
+      # checksum-verified against the release SHASUMS256.txt.
+      ELECTRON_VERSION: 43.4.1
     cmds:
       - |
         set -euo pipefail
+        EZIP=electron-v{{.ELECTRON_VERSION}}-linux-x64.zip
+        CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/{{.APP_NAME}}"
+        mkdir -p "$CACHE"
+        if [ ! -f "$CACHE/$EZIP" ]; then
+          curl -fL -o "$CACHE/$EZIP.part" \
+            "https://github.com/electron/electron/releases/download/v{{.ELECTRON_VERSION}}/$EZIP"
+          mv "$CACHE/$EZIP.part" "$CACHE/$EZIP"
+        fi
+        curl -fsL -o "$CACHE/SHASUMS256-v{{.ELECTRON_VERSION}}.txt" \
+          "https://github.com/electron/electron/releases/download/v{{.ELECTRON_VERSION}}/SHASUMS256.txt"
+        (cd "$CACHE" && grep " \*$EZIP\$" "SHASUMS256-v{{.ELECTRON_VERSION}}.txt" | sha256sum -c -)
         D=/tmp/{{.APP_NAME}}-deb/{{.DEB_NAME}}
         rm -rf /tmp/{{.APP_NAME}}-deb
         install -Dm755 {{.BIN_DIR}}/{{.APP_NAME}}-server "$D/usr/lib/{{.APP_NAME}}/{{.APP_NAME}}-server"
         install -Dm644 desktop/main.js "$D/usr/lib/{{.APP_NAME}}/main.js"
         install -Dm644 desktop/package.json "$D/usr/lib/{{.APP_NAME}}/package.json"
         install -Dm644 build/appicon.png "$D/usr/share/icons/hicolor/512x512/apps/{{.APP_NAME}}.png"
-        install -Dm755 build/arch/{{.APP_NAME}} "$D/usr/bin/{{.APP_NAME}}"
         install -Dm644 build/arch/{{.APP_NAME}}.desktop "$D/usr/share/applications/{{.APP_NAME}}.desktop"
         install -Dm644 LICENSE "$D/usr/share/doc/{{.APP_NAME}}/copyright"
+        mkdir -p "$D/usr/lib/{{.APP_NAME}}/electron"
+        unzip -q "$CACHE/$EZIP" -d "$D/usr/lib/{{.APP_NAME}}/electron"
+        # setuid chrome-sandbox: Ubuntu 24.04 restricts unprivileged user
+        # namespaces, so electron needs the setuid sandbox helper.
+        chmod 4755 "$D/usr/lib/{{.APP_NAME}}/electron/chrome-sandbox"
+        mkdir -p "$D/usr/bin"
+        cat > "$D/usr/bin/{{.APP_NAME}}" <<'EOF'
+        #!/bin/sh
+        exec /usr/lib/{{.APP_NAME}}/electron/electron /usr/lib/{{.APP_NAME}} "$@"
+        EOF
+        chmod 755 "$D/usr/bin/{{.APP_NAME}}"
         mkdir -p "$D/DEBIAN"
         cat > "$D/DEBIAN/control" <<EOF
         Package: {{.APP_NAME}}
@@ -109,9 +140,10 @@ tasks:
         Maintainer: stuffz <stuffz@localhost>
         Section: database
         Priority: optional
+        Depends: libgtk-3-0, libnss3, libasound2t64 | libasound2, libxss1, libnotify4, libsecret-1-0, xdg-utils
         Description: Fast MySQL GUI (Electron shell over the {{.APP_NAME}} server)
-         No packaged electron exists on Ubuntu; an electron binary must be on
-         PATH at runtime (e.g. npm install -g electron).
+         Bundles the Electron {{.ELECTRON_VERSION}} runtime — no system
+         electron or npm required.
         EOF
         mkdir -p {{.BIN_DIR}}
         docker run --rm -v /tmp/{{.APP_NAME}}-deb:/pkg -v "{{.ROOT_DIR}}/{{.BIN_DIR}}":/out ubuntu:24.04 \

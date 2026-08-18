@@ -27,6 +27,7 @@ container.
 ```
 wails3 task build         # production server binary → bin/mybench-server
 wails3 task build:all     # cross-compile linux-amd64, darwin-arm64, windows-amd64
+wails3 task windows:build # native Windows GUI exe → bin/mybench.exe
 wails3 task desktop       # run the Electron shell against bin/mybench-server (host)
 wails3 task package:arch  # Arch package via makepkg (host)
 wails3 task install       # package + sudo pacman -U (host)

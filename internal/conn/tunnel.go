@@ -49,7 +49,9 @@ func (m *TunnelMgr) start(teleportDB, dbUser, dbName string) (*tunnel, error) {
 	// cryptic dial timeout twenty seconds later.
 	statusCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if out, err := exec.CommandContext(statusCtx, "tsh", "status").CombinedOutput(); err != nil {
+	statusCmd := exec.CommandContext(statusCtx, "tsh", "status")
+	prepareCmd(statusCmd)
+	if out, err := statusCmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("tsh is not logged in — run `tsh login` first (%s)", firstLine(out))
 	}
 
@@ -111,11 +113,13 @@ func (m *TunnelMgr) startSSH(c SavedConn) (*tunnel, error) {
 func spawnTunnel(bin string, args []string, port int, hint string) (*tunnel, error) {
 	//nolint:gosec // args come from the user's own saved connection config
 	cmd := exec.CommandContext(context.Background(), bin, args...)
+	prepareCmd(cmd)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start %s: %w", bin, err)
 	}
+	adoptCmd(cmd)
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 

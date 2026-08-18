@@ -7,6 +7,7 @@ package conn
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -24,8 +25,8 @@ type TeleportStatus struct {
 	Username   string   `json:"username"`
 	Cluster    string   `json:"cluster"`
 	Roles      []string `json:"roles"`
-	DBUsers    []string `json:"dbUsers"`   // traits: db users the certs allow
-	Databases  []string `json:"databases"` // db resources with active certs
+	DBUsers    []string `json:"dbUsers"`    // traits: db users the certs allow
+	Databases  []string `json:"databases"`  // db resources with active certs
 	ValidUntil string   `json:"validUntil"` // RFC3339; empty if unknown
 }
 
@@ -46,15 +47,15 @@ func (s *Service) TeleportStatus() *TeleportStatus {
 	ctx, cancel := context.WithTimeout(context.Background(), tshTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "tsh", "status", "-f", "json")
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
+	prepareCmd(cmd)
+	// On an expired profile tsh exits non-zero (stderr: ANSI-colored "ERROR:
+	// Active profile expired.") but still prints the profile JSON on stdout,
+	// so parse stdout regardless of the exit code and ignore stderr.
 	out, err := cmd.Output()
-	if err != nil {
-		detail := strings.TrimSpace(stderr.String())
-		if detail == "" {
-			detail = err.Error()
-		}
-		return &TeleportStatus{Found: true, Detail: "not logged in — run `tsh login`: " + detail}
+	// Empty stdout means there was no profile to print at all (never logged
+	// in, or tsh failed outright) — say so instead of a misleading parse path.
+	if strings.TrimSpace(string(out)) == "" {
+		return &TeleportStatus{Found: true, Detail: "`tsh status` failed — run `tsh login`, or `tsh status` in a terminal for details"}
 	}
 	var raw struct {
 		Active struct {
@@ -68,11 +69,12 @@ func (s *Service) TeleportStatus() *TeleportStatus {
 			ValidUntil time.Time `json:"valid_until"`
 		} `json:"active"`
 	}
-	if err := json.Unmarshal(out, &raw); err != nil {
-		return &TeleportStatus{Found: true, Detail: "parse tsh status output: " + err.Error()}
+	jsonErr := json.Unmarshal(out, &raw)
+	if err == nil && jsonErr != nil {
+		return &TeleportStatus{Found: true, Detail: "parse tsh status output: " + jsonErr.Error()}
 	}
 	a := raw.Active
-	if a.Username == "" {
+	if jsonErr != nil || a.Username == "" {
 		return &TeleportStatus{Found: true, Detail: "not logged in — run `tsh login`"}
 	}
 	st := &TeleportStatus{
@@ -86,10 +88,10 @@ func (s *Service) TeleportStatus() *TeleportStatus {
 	}
 	if !a.ValidUntil.IsZero() {
 		st.ValidUntil = a.ValidUntil.Format(time.RFC3339)
-		if time.Now().After(a.ValidUntil) {
-			st.LoggedIn = false
-			st.Detail = "session expired — run `tsh login`"
-		}
+	}
+	if err != nil || (!a.ValidUntil.IsZero() && time.Now().After(a.ValidUntil)) {
+		st.LoggedIn = false
+		st.Detail = "session expired — run `tsh login`"
 	}
 	return st
 }
@@ -102,15 +104,11 @@ func (s *Service) TeleportDatabases() ([]TeleportDB, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), tshTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "tsh", "db", "ls", "--format=json")
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
+	prepareCmd(cmd)
+	// stderr is ANSI-colored noise (same as in TeleportStatus) — ignore it.
 	out, err := cmd.Output()
 	if err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return nil, fmt.Errorf("tsh db ls: %s", msg)
+		return nil, errors.New("`tsh db ls` failed — run `tsh login`, or `tsh db ls` in a terminal for details")
 	}
 	var raw []struct {
 		Metadata struct {
