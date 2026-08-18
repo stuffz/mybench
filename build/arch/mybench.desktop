@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=mybench
+Comment=Fast MySQL GUI
+Exec=mybench
+Icon=mybench
+Categories=Development;Database;
+Terminal=false
+StartupNotify=false
+StartupWMClass=mybench

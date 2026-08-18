@@ -1,0 +1,8 @@
+{
+  "name": "mybench",
+  "dockerComposeFile": "compose.yaml",
+  "service": "dev",
+  "workspaceFolder": "/work",
+  "forwardPorts": [34115, 5173, 9245],
+  "remoteUser": "dev"
+}

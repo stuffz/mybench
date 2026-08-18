@@ -1,0 +1,22 @@
+# Local dev package — build the server first (wails3 task build:server), then:
+#   cd build/arch && BUILDDIR=/tmp/mybench-pkg PKGDEST=/tmp/mybench-pkg makepkg -f
+pkgname=mybench
+pkgver=0.1.0
+pkgrel=7
+pkgdesc="Fast MySQL GUI (Electron shell over the mybench server)"
+arch=('x86_64')
+url="https://github.com/stuffz/mybench"
+license=('MIT')
+depends=('electron')
+options=('!strip' '!debug')
+
+package() {
+  local repo="$startdir/../.."
+  install -Dm755 "$repo/bin/mybench-server" "$pkgdir/usr/lib/mybench/mybench-server"
+  install -Dm644 "$repo/desktop/main.js" "$pkgdir/usr/lib/mybench/main.js"
+  install -Dm644 "$repo/desktop/package.json" "$pkgdir/usr/lib/mybench/package.json"
+  install -Dm644 "$repo/build/appicon.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/mybench.png"
+  install -Dm755 "$startdir/mybench" "$pkgdir/usr/bin/mybench"
+  install -Dm644 "$startdir/mybench.desktop" "$pkgdir/usr/share/applications/mybench.desktop"
+  install -Dm644 "$repo/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

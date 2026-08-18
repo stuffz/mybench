@@ -1,0 +1,6 @@
+# pnpm blocks dependency lifecycle scripts by default (supply-chain stance);
+# electron's postinstall downloads its binary and is the one allowed build.
+onlyBuiltDependencies:
+  - electron
+packages:
+  - "."

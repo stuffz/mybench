@@ -1,0 +1,161 @@
+version: '3'
+
+vars:
+  APP_NAME: "mybench"
+  BIN_DIR: "bin"
+  PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "npm"}}'
+  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+  # Target OS for the remaining GUI builds (windows/darwin), overridden by
+  # `wails3 build GOOS=...`. The Linux desktop is the Electron shell, not a
+  # native wails build.
+  GOOS: '{{.GOOS | default OS}}'
+
+includes:
+  common: ./build/Taskfile.yml
+  windows: ./build/windows/Taskfile.yml
+  darwin: ./build/darwin/Taskfile.yml
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Production server binary for the host platform (bin/mybench-server)
+    cmds:
+      - task: common:build:server
+
+  build:all:
+    desc: Cross-compile production server binaries (linux-amd64, darwin-arm64, windows-amd64)
+    deps:
+      - task: common:build:frontend
+        vars:
+          BUILD_FLAGS: "-tags server,production"
+    cmds:
+      - GOOS=linux GOARCH=amd64 go build {{.SERVER_FLAGS}} -o {{.BIN_DIR}}/{{.APP_NAME}}-server-linux-amd64
+      - GOOS=darwin GOARCH=arm64 go build {{.SERVER_FLAGS}} -o {{.BIN_DIR}}/{{.APP_NAME}}-server-darwin-arm64
+      - GOOS=windows GOARCH=amd64 go build {{.SERVER_FLAGS}} -o {{.BIN_DIR}}/{{.APP_NAME}}-server-windows-amd64.exe
+    vars:
+      GIT_COMMIT:
+        sh: git describe --always --dirty 2>/dev/null || echo dev
+      BUILD_DATE:
+        sh: date -u +%Y-%m-%dT%H:%M:%SZ
+      STAMP: '-X github.com/stuffz/mybench/internal/buildinfo.Commit={{.GIT_COMMIT}} -X github.com/stuffz/mybench/internal/buildinfo.Date={{.BUILD_DATE}}'
+      SERVER_FLAGS: '-tags server,production -trimpath -buildvcs=false -ldflags="-w -s {{.STAMP}}"'
+    env:
+      CGO_ENABLED: "0"
+
+  run:server:
+    desc: Build (DEV=true) and run the dev server — the devcontainer dev loop on :8080
+    cmds:
+      - task: common:run:server
+
+  desktop:
+    desc: Launch the Electron shell against bin/mybench-server (run on the host)
+    preconditions:
+      - sh: test -x {{.BIN_DIR}}/{{.APP_NAME}}-server
+        msg: "no {{.BIN_DIR}}/{{.APP_NAME}}-server — build it: wails3 task build"
+    cmds:
+      - |
+        if [ -x desktop/node_modules/electron/dist/electron ]; then
+          exec desktop/node_modules/electron/dist/electron desktop
+        fi
+        exec electron desktop
+
+  package:arch:
+    desc: Build the Arch package into bin/ (host; needs makepkg; run `build` first)
+    preconditions:
+      - sh: test -x {{.BIN_DIR}}/{{.APP_NAME}}-server
+        msg: "no {{.BIN_DIR}}/{{.APP_NAME}}-server — build it: wails3 task build"
+      - sh: command -v makepkg
+        msg: "makepkg not found — this task runs on the Arch host, not in the container"
+    cmds:
+      # -d: the electron dependency is resolved by pacman at install time.
+      - mkdir -p {{.BIN_DIR}}
+      - cd build/arch && BUILDDIR=/tmp/{{.APP_NAME}}-makepkg PKGDEST={{.ROOT_DIR}}/{{.BIN_DIR}} makepkg -fd
+
+  package:deb:
+    desc: Build a Debian/Ubuntu package into bin/ (dpkg-deb via docker; run `build` first)
+    preconditions:
+      - sh: test -x {{.BIN_DIR}}/{{.APP_NAME}}-server
+        msg: "no {{.BIN_DIR}}/{{.APP_NAME}}-server — build it: wails3 task build"
+      - sh: docker info > /dev/null 2>&1
+        msg: "Docker is required (host has no dpkg-deb)."
+    vars:
+      # Version follows the PKGBUILD so both packages stay in lockstep.
+      PKGVER:
+        sh: sed -n 's/^pkgver=//p' build/arch/PKGBUILD
+      PKGREL:
+        sh: sed -n 's/^pkgrel=//p' build/arch/PKGBUILD
+      DEB_NAME: '{{.APP_NAME}}_{{.PKGVER}}-{{.PKGREL}}_amd64'
+    cmds:
+      - |
+        set -euo pipefail
+        D=/tmp/{{.APP_NAME}}-deb/{{.DEB_NAME}}
+        rm -rf /tmp/{{.APP_NAME}}-deb
+        install -Dm755 {{.BIN_DIR}}/{{.APP_NAME}}-server "$D/usr/lib/{{.APP_NAME}}/{{.APP_NAME}}-server"
+        install -Dm644 desktop/main.js "$D/usr/lib/{{.APP_NAME}}/main.js"
+        install -Dm644 desktop/package.json "$D/usr/lib/{{.APP_NAME}}/package.json"
+        install -Dm644 build/appicon.png "$D/usr/share/icons/hicolor/512x512/apps/{{.APP_NAME}}.png"
+        install -Dm755 build/arch/{{.APP_NAME}} "$D/usr/bin/{{.APP_NAME}}"
+        install -Dm644 build/arch/{{.APP_NAME}}.desktop "$D/usr/share/applications/{{.APP_NAME}}.desktop"
+        install -Dm644 LICENSE "$D/usr/share/doc/{{.APP_NAME}}/copyright"
+        mkdir -p "$D/DEBIAN"
+        cat > "$D/DEBIAN/control" <<EOF
+        Package: {{.APP_NAME}}
+        Version: {{.PKGVER}}-{{.PKGREL}}
+        Architecture: amd64
+        Maintainer: stuffz <stuffz@localhost>
+        Section: database
+        Priority: optional
+        Description: Fast MySQL GUI (Electron shell over the {{.APP_NAME}} server)
+         No packaged electron exists on Ubuntu; an electron binary must be on
+         PATH at runtime (e.g. npm install -g electron).
+        EOF
+        mkdir -p {{.BIN_DIR}}
+        docker run --rm -v /tmp/{{.APP_NAME}}-deb:/pkg -v "{{.ROOT_DIR}}/{{.BIN_DIR}}":/out ubuntu:24.04 \
+          dpkg-deb --build --root-owner-group /pkg/{{.DEB_NAME}} /out/{{.DEB_NAME}}.deb
+        rm -rf /tmp/{{.APP_NAME}}-deb
+
+  install:
+    desc: Package and install on this host (sudo pacman -U; run `build` first)
+    deps:
+      - package:arch
+    cmds:
+      - sudo pacman -U "$(cd build/arch && PKGDEST={{.ROOT_DIR}}/{{.BIN_DIR}} makepkg --packagelist | tail -1)"
+
+  test:
+    desc: Go tests (MYBENCH_TEST_DSN is provided by the devcontainer)
+    cmds:
+      - go test ./... {{.CLI_ARGS}}
+
+  lint:
+    desc: golangci-lint per .golangci.yml
+    cmds:
+      - golangci-lint run ./... {{.CLI_ARGS}}
+
+  tidy:
+    desc: go mod tidy
+    cmds:
+      - task: common:go:mod:tidy
+
+  clean:
+    desc: Remove build artifacts (bin/, frontend/dist)
+    cmds:
+      - rm -rf {{.BIN_DIR}} frontend/dist
+
+  build:docker:
+    desc: Server-mode Docker image (distroless, static)
+    cmds:
+      - task: common:build:docker
+
+  run:docker:
+    desc: Build and run the server Docker image on :8080
+    cmds:
+      - task: common:run:docker
+
+  setup:docker:
+    desc: Build the wails-cross image used by windows/darwin GUI cross-builds
+    cmds:
+      - task: common:setup:docker

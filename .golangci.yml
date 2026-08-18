@@ -1,0 +1,222 @@
+version: "2"
+
+linters:
+  enable:
+    # ── Bug prevention ──────────────────────────────────────────────
+    - asciicheck        # non-ASCII identifiers are easy to miss in review
+    - bidichk           # detect dangerous bidirectional Unicode control chars
+    - errcheck          # unchecked errors
+    - govet             # subtle correctness bugs
+    - staticcheck       # comprehensive static analysis
+    - errorlint         # correct error wrapping (%w) and comparison (errors.Is/As)
+    - bodyclose         # unclosed HTTP response bodies
+    - nilerr            # returning nil when err is not nil
+    - nilnil            # invalid value returned together with nil error
+    - makezero          # misuse of append with pre-allocated slices
+    - durationcheck     # incorrect time.Duration arithmetic
+    - wrapcheck         # external errors should be wrapped with context
+    - exhaustive        # switch on typed enums must cover all cases
+    - gochecksumtype    # exhaustiveness checks on Go sum types
+    - intrange          # use range-over-int (Go 1.22+)
+    - reassign          # detect reassignment of package-level variables
+    - wastedassign      # detect assignments whose value is never read
+    - sqlclosecheck     # SQL rows/statements must be closed
+    - rowserrcheck      # sql.Rows.Err() must be checked
+    - musttag           # struct tags required for (un)marshal targets
+    - noctx             # HTTP requests must carry a context
+    - forcetypeassert   # forbid unchecked type assertions
+    - containedctx      # context.Context should not live in structs
+    - fatcontext        # detect nested contexts in loops
+    - recvcheck         # consistent pointer/value receivers
+    - iface             # prevent interface misuse / pollution
+    - ireturn           # accept interfaces, return structs
+    - canonicalheader   # use canonical net/http headers
+
+    # ── Security ────────────────────────────────────────────────────
+    - gosec             # security-focused checks
+    - nolintlint        # keep suppressions intentional and well-formed
+
+    # ── Code quality ────────────────────────────────────────────────
+    - gocritic          # opinionated — all diagnostic/perf/style checks enabled
+    - loggercheck       # validate slog key/value pairs
+    - sloglint          # consistent slog usage
+    - unconvert         # unnecessary type conversions
+    - unparam           # unused function parameters
+    - unused            # unused code
+    - ineffassign       # ineffectual assignments
+    - copyloopvar       # loop variable capture bugs
+    - goconst           # repeated literals → named constants
+    - predeclared       # shadowing predeclared identifiers (len, cap, etc.)
+    - mirror            # suggest mirror-function alternatives (bytes ↔ strings)
+    - prealloc          # suggest preallocating slices when capacity is known
+    - perfsprint        # use strconv over fmt.Sprintf for simple conversions
+    - usestdlibvars     # use stdlib constants (http.StatusOK, http.MethodGet)
+    - exptostd          # replace golang.org/x/exp/* with stdlib equivalents
+
+    # ── Complexity ──────────────────────────────────────────────────
+    - gocognit          # cognitive complexity threshold
+    - cyclop            # cyclomatic complexity threshold
+    - nestif            # limit if-nesting depth
+
+    # ── Style ───────────────────────────────────────────────────────
+    - revive            # configurable linter, replacement for golint
+    - misspell          # typos in comments and strings
+    - godot             # top-level comments must end with a period
+    - dupword           # detect duplicate words in comments
+    - nakedret          # forbid naked returns
+    - dogsled           # limit blank identifiers in assignments
+    - tagalign          # align and sort struct field tags
+    - nosprintfhostport # use net.JoinHostPort, not fmt.Sprintf("%s:%d", …)
+    - gochecknoinits    # forbid init() functions
+    - promlinter        # Prometheus metric naming conventions
+    - decorder          # enforce declaration order
+    - grouper           # enforce expression grouping
+    - inamedparam       # interface methods must have named params
+    - embeddedstructfieldcheck # embedded fields at top of struct, separated by blank line
+
+    # ── Testing ─────────────────────────────────────────────────────
+    - tparallel         # detect t.Parallel() misuse in subtests
+    - paralleltest      # test functions should call t.Parallel()
+    - thelper           # test helpers must call t.Helper()
+    - testableexamples  # example funcs should have expected output
+
+    # ── Intentionally disabled ──────────────────────────────────────
+    # Inherited from sure-eb-ingest's evaluation. Re-check before enabling.
+    #
+    # - testpackage        # white-box testing is fine here
+    # - gochecknoglobals   # rejected upstream; revisit if globals creep in
+    # - err113             # flags all dynamic errors — too noisy
+    # - tagliatelle        # JSON tag casing follows the wire format, not Go style
+    # - nonamedreturns     # nakedret already bans naked returns
+    # - exhaustruct        # forces initializing every struct field — unworkable
+    # - varnamelen         # opinionated, high-noise
+    # - wsl / funlen / lll # whitespace / length pedantry, low signal
+
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        # Reordering struct fields for alignment hurts readability
+        - fieldalignment
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      settings:
+        hugeParam:
+          sizeThreshold: 256
+        rangeValCopy:
+          sizeThreshold: 256
+
+    revive:
+      rules:
+        # Original rules
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: increment-decrement
+        - name: receiver-naming
+        - name: range
+        - name: unexported-return
+        - name: var-naming
+        # Readability
+        - name: exported
+        - name: indent-error-flow
+        - name: if-return
+        - name: superfluous-else
+        - name: early-return
+        - name: empty-block
+        - name: unnecessary-stmt
+        - name: use-any
+        - name: confusing-naming
+        - name: import-shadowing
+        - name: bool-literal-in-expr
+        # Bug prevention
+        - name: modifies-value-receiver
+        - name: constant-logical-expr
+        - name: identical-branches
+        - name: waitgroup-by-value
+        - name: defer
+        - name: dot-imports
+        - name: duplicated-imports
+        - name: string-of-int
+        - name: time-equal
+        - name: unconditional-recursion
+        - name: useless-break
+        - name: call-to-gc
+
+    errorlint:
+      comparison: true
+      asserts: true
+
+    wrapcheck:
+      # Errors from our own packages are already wrapped at their source.
+      ignore-package-globs:
+        - github.com/stuffz/mybench/*
+
+    exhaustive:
+      default-signifies-exhaustive: false
+
+    nakedret:
+      max-func-lines: 0      # no naked returns, ever
+
+    nestif:
+      min-complexity: 4       # flag nesting deeper than 4
+
+    gocognit:
+      min-complexity: 40      # cognitive complexity ceiling
+
+    cyclop:
+      max-complexity: 20      # cyclomatic complexity ceiling
+
+    goconst:
+      min-len: 3
+      min-occurrences: 2      # two repeats is enough to extract
+
+    tagalign:
+      sort: true              # also sort struct tags alphabetically
+
+    dogsled:
+      max-blank-identifiers: 2
+
+    perfsprint:
+      int-conversion: true
+      err-error: true
+      errorf: true
+      sprintf1: true
+      strconcat: false        # string concat is sometimes clearer than Sprintf
+
+    promlinter:
+      strict: true
+
+  exclusions:
+    rules:
+      # Test files: relax errcheck and unparam
+      - linters: [errcheck]
+        path: _test\.go
+      - linters: [unparam]
+        path: _test\.go
+      # Security checks that are noisy in test scaffolding
+      - linters: [gosec]
+        path: _test\.go
+        text: "G104|G112|G304|G306"
+      # Table-driven tests repeat literals (inputs vs expectations) by design
+      - linters: [goconst]
+        path: _test\.go
+    paths:
+      # Wails template scaffolding (mobile stubs, packaging) — not our code
+      - build
+    generated: lax
+
+formatters:
+  enable:
+    - gofumpt
+
+  settings:
+    gofumpt:
+      extra-rules: true

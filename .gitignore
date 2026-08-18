@@ -1,0 +1,9 @@
+*.log
+SPEC.md
+.task/
+bin/
+build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
+frontend/dist/
+node_modules/
+.pnpm-store/
+/mybench

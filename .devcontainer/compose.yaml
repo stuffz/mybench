@@ -1,0 +1,61 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /work
+    command: sleep infinity
+    volumes:
+      - ..:/work
+      - gomod:/go/pkg/mod
+      - gocache:/home/dev/.cache/go-build
+      - pnpmstore:/home/dev/.local/share/pnpm/store
+    ports:
+      - "127.0.0.1:8080:8080"   # wails server mode — the container dev loop
+      - "127.0.0.1:9245:9245"   # vite (wails3 dev; UI preview only in browser)
+    environment:
+      - DISPLAY=:99
+      - PACKAGE_MANAGER=pnpm
+      # WebKit's bubblewrap sandbox cannot nest inside docker; the container
+      # is the sandbox here. GTK_A11Y silences the missing a11y-bus warning.
+      - WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+      - GTK_A11Y=none
+      # 0.0.0.0 so docker's port publish reaches server mode; the publish
+      # itself stays bound to the host's loopback.
+      - WAILS_SERVER_HOST=0.0.0.0
+      - MYBENCH_TEST_DSN=root:devroot@tcp(db:3306)/mybench_test
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: devroot
+      MYSQL_DATABASE: mybench_test
+    # host-loopback publish so the desktop binary on the host can test against
+    # it; the dev container still reaches it as db:3306
+    ports:
+      - "127.0.0.1:3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pdevroot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Second server so multi-connection (global tabs, connID keying) is testable
+  db2:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: devroot
+      MYSQL_DATABASE: mybench_other
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pdevroot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  gomod:
+  gocache:
+  pnpmstore:
