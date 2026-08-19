@@ -3,7 +3,8 @@ version: '3'
 vars:
   APP_NAME: "mybench"
   BIN_DIR: "bin"
-  PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "npm"}}'
+  # The repo is pnpm (pnpm-lock.yaml) — never fall back to npm.
+  PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "pnpm"}}'
   VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
   # Target OS for the remaining GUI builds (windows/darwin), overridden by
   # `wails3 build GOOS=...`. The Linux desktop is the Electron shell, not a
@@ -80,6 +81,29 @@ tasks:
       # -d: the electron dependency is resolved by pacman at install time.
       - mkdir -p {{.BIN_DIR}}
       - cd build/arch && BUILDDIR=/tmp/{{.APP_NAME}}-makepkg PKGDEST={{.ROOT_DIR}}/{{.BIN_DIR}} makepkg -fd
+
+  package:macos:
+    desc: Cross-build the (unsigned) mac .app into bin/ (host; needs docker — sign on a mac per RELEASE.md)
+    preconditions:
+      - sh: docker image inspect devcontainer-dev > /dev/null 2>&1
+        msg: "devcontainer image missing — build it: docker compose -f .devcontainer/compose.yaml build dev"
+      - sh: docker image inspect wails-cross > /dev/null 2>&1
+        msg: "wails-cross image missing — build it: go-task setup:docker"
+    cmds:
+      # darwin:package needs wails3+pnpm (devcontainer image) AND docker (the
+      # wails-cross build), so run it in a throwaway devcontainer with the
+      # host docker socket. The repo mounts at its host path so the nested
+      # `docker run -v` resolves the same path on the host daemon.
+      - |
+        docker run --rm -u "$(id -u)" --group-add "$(stat -c %g /var/run/docker.sock)" \
+          -e PACKAGE_MANAGER=pnpm \
+          -v "{{.ROOT_DIR}}:{{.ROOT_DIR}}" -w "{{.ROOT_DIR}}" \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v "$(command -v docker):/usr/bin/docker:ro" \
+          -v devcontainer_gomod:/go/pkg/mod \
+          -v devcontainer_gocache:/home/dev/.cache/go-build \
+          -v devcontainer_pnpmstore:/home/dev/.local/share/pnpm/store \
+          devcontainer-dev wails3 task darwin:package DOCKER_MOUNTS=""
 
   package:deb:
     desc: Build a Debian/Ubuntu package into bin/ (dpkg-deb via docker; run `build` first)
