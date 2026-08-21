@@ -2,7 +2,7 @@
 #   cd build/arch && BUILDDIR=/tmp/mybench-pkg PKGDEST=/tmp/mybench-pkg makepkg -f
 pkgname=mybench
 pkgver=0.1.0
-pkgrel=9
+pkgrel=10
 pkgdesc="Fast MySQL GUI (Electron shell over the mybench server)"
 arch=('x86_64')
 url="https://github.com/stuffz/mybench"

@@ -73,6 +73,8 @@ func (m *TunnelMgr) start(teleportDB, dbUser, dbName string) (*tunnel, error) {
 // startSSH forwards a local port to the MySQL target through the system ssh
 // client. BatchMode keeps ssh from prompting — auth must come from keys, an
 // agent, or ssh_config; a password prompt would hang a GUI app forever.
+// The agent is passed explicitly (see agentEnv): a GUI process inherits the
+// desktop session's environment, which usually has no SSH_AUTH_SOCK.
 func (m *TunnelMgr) startSSH(c SavedConn) (*tunnel, error) {
 	if c.SSHHost == "" {
 		return nil, errors.New("ssh connection has no SSH host")
@@ -106,13 +108,32 @@ func (m *TunnelMgr) startSSH(c SavedConn) (*tunnel, error) {
 		dest = c.SSHUser + "@" + c.SSHHost
 	}
 	args = append(args, dest)
-	return spawnTunnel("ssh", args, port,
-		"ssh runs with BatchMode — key or agent auth must work non-interactively")
+	env := agentEnv()
+	hint := "ssh runs with BatchMode — key or agent auth must work non-interactively"
+	if !hasEnv(env, "SSH_AUTH_SOCK") {
+		hint += "; no ssh-agent was found, so only an on-disk key file can work"
+	}
+	return spawnTunnelEnv("ssh", args, env, port, hint)
+}
+
+func hasEnv(env []string, key string) bool {
+	for _, kv := range env {
+		if strings.HasPrefix(kv, key+"=") && kv != key+"=" {
+			return true
+		}
+	}
+	return false
 }
 
 func spawnTunnel(bin string, args []string, port int, hint string) (*tunnel, error) {
+	return spawnTunnelEnv(bin, args, nil, port, hint)
+}
+
+// spawnTunnelEnv starts the tunnel process; a nil env inherits this process's.
+func spawnTunnelEnv(bin string, args, env []string, port int, hint string) (*tunnel, error) {
 	//nolint:gosec // args come from the user's own saved connection config
 	cmd := exec.CommandContext(context.Background(), bin, args...)
+	cmd.Env = env
 	prepareCmd(cmd)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

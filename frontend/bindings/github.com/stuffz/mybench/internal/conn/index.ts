@@ -7,6 +7,9 @@ export {
 };
 
 export type {
+    SSHAgentStatus,
+    SSHBrowse,
+    SSHFile,
     SavedConn,
     State,
     TeleportDB,

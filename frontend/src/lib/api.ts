@@ -13,6 +13,9 @@ export type {
   State as ConnState,
   TeleportStatus,
   TeleportDB,
+  SSHAgentStatus,
+  SSHBrowse,
+  SSHFile,
 } from "../../bindings/github.com/stuffz/mybench/internal/conn";
 export type {
   CellEdit,

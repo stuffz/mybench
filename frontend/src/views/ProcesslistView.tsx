@@ -25,6 +25,7 @@ type PendingKill = { proc: Process; queryOnly: boolean };
 export function ProcesslistView({ connID, active }: Props) {
   const [procs, setProcs] = useState<Process[]>([]);
   const [auto, setAuto] = useState(true);
+  const [hideSleeping, setHideSleeping] = useState(false);
   const [confirm, setConfirm] = useState<PendingKill | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Row whose statement was just copied — brief check-mark feedback.
@@ -56,6 +57,12 @@ export function ProcesslistView({ connID, active }: Props) {
     return () => clearInterval(t);
   }, [active, connected, auto, refresh]);
 
+  // Idle pooled clients are most of the list on a busy server and never the
+  // thread you are looking for.
+  const shown = hideSleeping
+    ? procs.filter((p) => p.command.toLowerCase() !== "sleep")
+    : procs;
+
   const kill = async (id: number, queryOnly: boolean) => {
     setConfirm(null);
     try {
@@ -73,10 +80,17 @@ export function ProcesslistView({ connID, active }: Props) {
         <label className="flex items-center gap-1.5 text-muted-foreground">
           <Switch checked={auto} onCheckedChange={setAuto} /> Auto-refresh
         </label>
+        <label className="flex items-center gap-1.5 text-muted-foreground">
+          <Switch checked={hideSleeping} onCheckedChange={setHideSleeping} /> Hide Sleeping
+        </label>
         <Button size="xs" variant="outline" onClick={() => void refresh()}>
           Refresh
         </Button>
-        <span className="text-muted-foreground">{procs.length} threads</span>
+        <span className="text-muted-foreground">
+          {hideSleeping && shown.length !== procs.length
+            ? `${shown.length} of ${procs.length} threads`
+            : `${procs.length} threads`}
+        </span>
       </div>
       {error && (
         <pre className="m-2 whitespace-pre-wrap rounded-md border border-destructive/50 bg-destructive/10 p-2 font-mono text-xs text-destructive">
@@ -95,7 +109,7 @@ export function ProcesslistView({ connID, active }: Props) {
             </tr>
           </thead>
           <tbody>
-            {procs.map((p) => (
+            {shown.map((p) => (
               <tr key={p.id} className="border-t border-border/40 hover:bg-muted/30">
                 <td className="px-2 py-1">{p.id}</td>
                 <td className="px-2 py-1">{p.user}</td>

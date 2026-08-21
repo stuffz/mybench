@@ -44,6 +44,23 @@ export function Open(id: string): $CancellablePromise<$models.State | null> {
 }
 
 /**
+ * SSHAgentStatus probes for a usable agent (read-only: it asks for the
+ * identity list and counts it, never for a signature).
+ */
+export function SSHAgentStatus(): $CancellablePromise<$models.SSHAgentStatus | null> {
+    return $Call.ByID(2376330222);
+}
+
+/**
+ * SSHBrowse lists directories and private-key candidates under dir, starting
+ * at ~/.ssh when dir is empty. Key files are identified by name and by a
+ * sibling .pub — never by reading them, so no key material is touched.
+ */
+export function SSHBrowse(dir: string): $CancellablePromise<$models.SSHBrowse | null> {
+    return $Call.ByID(1600851829, dir);
+}
+
+/**
  * Save upserts a connection; a non-empty password goes to the secret store,
  * never to disk. An empty password keeps whatever is already stored.
  */

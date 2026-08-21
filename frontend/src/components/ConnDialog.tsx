@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { ConnectionService } from "@/lib/api";
-import type { SavedConn, TeleportStatus, TeleportDB } from "@/lib/api";
+import type {
+  SavedConn,
+  TeleportStatus,
+  TeleportDB,
+  SSHAgentStatus,
+  SSHBrowse,
+  SSHFile,
+} from "@/lib/api";
 import { useApp, connHue } from "@/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +59,13 @@ function relTime(iso: string): { text: string; msLeft: number } {
   return { text: ms >= 0 ? `in ${span}` : `expired ${span} ago`, msLeft: ms };
 }
 
+// Reopen the browser where the current value points (its directory), so
+// editing an existing key does not start over at ~/.ssh.
+function keyDir(keyFile: string): string {
+  const i = keyFile.lastIndexOf("/");
+  return i > 0 ? keyFile.slice(0, i) : "";
+}
+
 const empty = (): SavedConn => ({
   id: "",
   name: "",
@@ -70,14 +84,19 @@ const empty = (): SavedConn => ({
   teleportDb: "",
 });
 
-function summary(c: SavedConn): string {
+// One line per hop: an ssh target plus its jump host does not fit on a single
+// row without truncating the part that tells the two connections apart.
+function summary(c: SavedConn): string[] {
   switch (c.method || (c.teleport ? "teleport" : "tcp")) {
     case "teleport":
-      return `${c.user}@tsh:${c.teleportDb}`;
+      return [`${c.user}@tsh:${c.teleportDb}`];
     case "ssh":
-      return `${c.user}@${c.host}:${c.port} · ssh ${c.sshUser ? `${c.sshUser}@` : ""}${c.sshHost}`;
+      return [
+        `${c.user}@${c.host}:${c.port}`,
+        `via ssh ${c.sshUser ? `${c.sshUser}@` : ""}${c.sshHost}${c.sshPort && c.sshPort !== 22 ? `:${c.sshPort}` : ""}`,
+      ];
     default:
-      return `${c.user}@${c.host}:${c.port}`;
+      return [`${c.user}@${c.host}:${c.port}`];
   }
 }
 
@@ -90,6 +109,8 @@ export function ConnDialog() {
   const [busy, setBusy] = useState<string | null>(null);
   const [tstatus, setTstatus] = useState<TeleportStatus | null>(null);
   const [tdbs, setTdbs] = useState<TeleportDB[] | null>(null);
+  const [agent, setAgent] = useState<SSHAgentStatus | null>(null);
+  const [keyBrowse, setKeyBrowse] = useState<SSHBrowse | null>(null);
 
   const method = editing?.method || "tcp";
 
@@ -112,6 +133,28 @@ export function ConnDialog() {
       .then(setTstatus)
       .catch(() => setTstatus(null));
   }, [method]);
+
+  // Agent availability decides whether a key file is optional or mandatory,
+  // so check it while the SSH method is up — same pattern as tsh status.
+  useEffect(() => {
+    if (method !== "ssh") {
+      setAgent(null);
+      setKeyBrowse(null);
+      return;
+    }
+    ConnectionService.SSHAgentStatus()
+      .then(setAgent)
+      .catch(() => setAgent(null));
+  }, [method]);
+
+  const browseKeys = async (dir: string) => {
+    setError(null);
+    try {
+      setKeyBrowse(await ConnectionService.SSHBrowse(dir));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const browseTeleport = async () => {
     setError(null);
@@ -195,7 +238,7 @@ export function ConnDialog() {
   );
 
   const note = (text: string) => (
-    <p className="ml-[33%] pl-2 text-xs text-muted-foreground">{text}</p>
+    <p className="ml-[33%] pl-2 pr-2 text-xs text-muted-foreground">{text}</p>
   );
 
   // Closing the dialog any way (✕, Escape, overlay) discards the in-progress
@@ -207,6 +250,7 @@ export function ConnDialog() {
       setPassword("");
       setError(null);
       setTdbs(null);
+      setKeyBrowse(null);
     }
   };
 
@@ -215,13 +259,13 @@ export function ConnDialog() {
       <DialogTrigger className="inline-flex h-8 items-center rounded-md border bg-background px-3 text-xs font-medium hover:bg-muted">
         Connections
       </DialogTrigger>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Connections</DialogTitle>
         </DialogHeader>
 
         {!editing && (
-          <div className="flex flex-col gap-2">
+          <div className="flex max-h-[calc(100dvh-10rem)] flex-col gap-2 overflow-y-auto pr-1">
             {saved.map((c) => (
               <div key={c.id} className="flex items-center gap-2 rounded-md border p-2">
                 <span
@@ -230,9 +274,11 @@ export function ConnDialog() {
                 />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm">{c.name}</div>
-                  <div className="truncate font-mono text-xs text-muted-foreground">
-                    {summary(c)}
-                  </div>
+                  {summary(c).map((line) => (
+                    <div key={line} className="truncate font-mono text-xs text-muted-foreground">
+                      {line}
+                    </div>
+                  ))}
                 </div>
                 {openIDs.includes(c.id) ? (
                   <Button size="sm" variant="outline" onClick={() => closeConn(c.id)}>
@@ -263,7 +309,7 @@ export function ConnDialog() {
         )}
 
         {editing && (
-          <div className="flex flex-col gap-2">
+          <div className="flex max-h-[calc(100dvh-10rem)] flex-col gap-2 overflow-y-auto pr-1">
             {field("Name", editing.name, (v) => setEditing({ ...editing, name: v }))}
 
             <div className="grid grid-cols-3 items-center gap-2">
@@ -312,9 +358,91 @@ export function ConnDialog() {
                 {field("SSH Port", editing.sshPort || 22, (v) =>
                   setEditing({ ...editing, sshPort: Number(v) || 22 }), { type: "number" })}
                 {field("SSH User", editing.sshUser, (v) => setEditing({ ...editing, sshUser: v }))}
-                {field("SSH Key File", editing.sshKeyFile, (v) =>
-                  setEditing({ ...editing, sshKeyFile: v }), { placeholder: "optional — agent/ssh_config otherwise" })}
-                {note("auth is non-interactive: keys, agent or ssh_config — password prompts can't work here")}
+                <div className="grid grid-cols-3 items-center gap-2">
+                  <Label className="text-right text-xs">SSH Key File</Label>
+                  <div className="col-span-2 flex items-center gap-2">
+                    <Input
+                      className="h-8 flex-1 font-mono text-xs"
+                      placeholder={
+                        agent?.found
+                          ? "optional — the agent holds a usable key"
+                          : "path to a private key"
+                      }
+                      value={editing.sshKeyFile}
+                      onChange={(e) => setEditing({ ...editing, sshKeyFile: e.target.value })}
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8"
+                      onClick={() => void browseKeys(keyDir(editing.sshKeyFile))}
+                    >
+                      Browse
+                    </Button>
+                  </div>
+                </div>
+                {keyBrowse && (
+                  <div className="ml-[33%] rounded-md border">
+                    <div className="flex items-center gap-2 border-b px-2 py-1">
+                      <span className="truncate font-mono text-xs text-muted-foreground">
+                        {keyBrowse.dir}
+                      </span>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        className="ml-auto"
+                        onClick={() => setKeyBrowse(null)}
+                      >
+                        close
+                      </Button>
+                    </div>
+                    <div className="max-h-36 overflow-auto">
+                      {keyBrowse.parent && (
+                        <button
+                          type="button"
+                          className="flex w-full items-baseline gap-2 px-2 py-1 text-left text-xs hover:bg-muted/50"
+                          onClick={() => void browseKeys(keyBrowse.parent)}
+                        >
+                          <span className="font-mono">../</span>
+                        </button>
+                      )}
+                      {(keyBrowse.files ?? []).length === 0 && !keyBrowse.parent && (
+                        <p className="p-2 text-xs text-muted-foreground">Nothing here.</p>
+                      )}
+                      {(keyBrowse.files ?? [])
+                        .filter((f): f is SSHFile => f !== null)
+                        .map((f) => (
+                          <button
+                            key={f.path}
+                            type="button"
+                            className="flex w-full items-baseline gap-2 px-2 py-1 text-left text-xs hover:bg-muted/50"
+                            title={f.path}
+                            onClick={() => {
+                              if (f.dir) {
+                                void browseKeys(f.path);
+                                return;
+                              }
+                              setEditing({ ...editing, sshKeyFile: f.path });
+                              setKeyBrowse(null);
+                            }}
+                          >
+                            <span className="font-mono">
+                              {f.name}
+                              {f.dir ? "/" : ""}
+                            </span>
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+                {agent === null && note("checking ssh-agent…")}
+                {agent?.found &&
+                  note(
+                    agent.keys > 0
+                      ? `ssh-agent: ${agent.keys} key${agent.keys === 1 ? "" : "s"} (${agent.socket})`
+                      : agent.detail,
+                  )}
+                {agent && !agent.found && note(agent.detail)}
                 {field("MySQL Host", editing.host, (v) => setEditing({ ...editing, host: v }), {
                   placeholder: "127.0.0.1 — as seen from the SSH host",
                 })}
