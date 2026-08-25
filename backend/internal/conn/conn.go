@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"net"
 	"os"
 	"path/filepath"
@@ -48,8 +49,9 @@ type SavedConn struct {
 	// teleport method.
 	Teleport   bool   `json:"teleport"`   // legacy flag, migrated to Method on load
 	TeleportDB string `json:"teleportDb"` // teleport database resource name
-	// Quick-connect profile: lives in memory only, hidden from the
-	// connections dialog, gone when the connection closes.
+	// Quick-connect profile: lives in quick.json (not connections.json),
+	// hidden from the connections dialog; its resource+user-derived id
+	// anchors the workspace's saved tabs across reconnects (SaveQuick).
 	Ephemeral bool `json:"ephemeral,omitempty"`
 }
 
@@ -121,12 +123,56 @@ func New() *Service {
 		configDir: dir,
 		tunnels:   &TunnelMgr{},
 	}
-	_ = s.loadFile() // missing file on first launch is fine
+	_ = s.loadFile()      // missing file on first launch is fine
+	_ = s.loadQuickFile() // same
 	return s
 }
 
 func (s *Service) file() string {
 	return filepath.Join(s.configDir, "connections.json")
+}
+
+// quick.json keeps the quick-connect profiles apart from the user-curated
+// connections.json: it is rebuildable cache with its own lifecycle, and
+// connections.json's array order is load-bearing (the dialog's display
+// order) — mixing cache entries in would make every writer preserve them.
+func (s *Service) quickFile() string {
+	return filepath.Join(s.configDir, "quick.json")
+}
+
+func (s *Service) loadQuickFile() error {
+	data, err := os.ReadFile(s.quickFile())
+	if err != nil {
+		return fmt.Errorf("read quick profiles: %w", err)
+	}
+	var list []SavedConn
+	if err := json.Unmarshal(data, &list); err != nil {
+		return fmt.Errorf("parse quick profiles: %w", err)
+	}
+	for _, c := range list {
+		s.quick[c.ID] = c
+	}
+	return nil
+}
+
+// saveQuickFile is called with s.mu held.
+func (s *Service) saveQuickFile() error {
+	list := make([]SavedConn, 0, len(s.quick))
+	for _, c := range s.quick {
+		list = append(list, c)
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
+	data, err := json.MarshalIndent(list, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode quick profiles: %w", err)
+	}
+	if err := os.MkdirAll(s.configDir, 0o700); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	if err := os.WriteFile(s.quickFile(), data, 0o600); err != nil {
+		return fmt.Errorf("write quick profiles: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) loadFile() error {
@@ -253,10 +299,21 @@ func autoName(c *SavedConn) string {
 	}
 }
 
-// SaveQuick registers a quick-connect Teleport profile: in memory only, never
-// on disk, listed as ephemeral so the shell can label its tab, removed again
-// by Close. Registering the same resource+user+database twice returns the
-// existing profile, so a failed open retried does not pile up entries.
+// quickID derives the profile id from resource+user, so reconnecting lands on
+// the same connection id and the workspace restores that identity's tabs —
+// while reader and admin on one resource stay two openable connections. The
+// database is deliberately not part of the id: a changed default schema
+// updates the profile in place (SaveQuick) instead of orphaning the tabs.
+func quickID(teleportDB, user string) string {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(teleportDB + "\x00" + user))
+	return "q" + strconv.FormatUint(h.Sum64(), 36)
+}
+
+// SaveQuick registers (or refreshes) a quick-connect Teleport profile in
+// quick.json — never the dialog's connections.json; the Ephemeral flag keeps
+// it out of the dialog. The profile outlives its connection (Close keeps it)
+// so the workspace's saved query tabs come back on the next quick connect.
 func (s *Service) SaveQuick(teleportDB, user, database string) (*SavedConn, error) {
 	if teleportDB == "" {
 		return nil, errors.New("quick connect needs a teleport database resource")
@@ -266,24 +323,26 @@ func (s *Service) SaveQuick(teleportDB, user, database string) (*SavedConn, erro
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, c := range s.quick {
-		if c.TeleportDB == teleportDB && c.User == user && c.Database == database {
-			return &c, nil
+	id := quickID(teleportDB, user)
+	c, ok := s.quick[id]
+	if !ok {
+		c = SavedConn{
+			ID:         id,
+			Method:     methodTeleport,
+			Teleport:   true,
+			TeleportDB: teleportDB,
+			User:       user,
+			Port:       3306,
+			TLSMode:    tlsPreferred,
+			Ephemeral:  true,
 		}
+		c.Name = autoName(&c)
 	}
-	c := SavedConn{
-		ID:         "q" + strconv.FormatInt(time.Now().UnixNano(), 36),
-		Method:     methodTeleport,
-		Teleport:   true,
-		TeleportDB: teleportDB,
-		User:       user,
-		Database:   database,
-		Port:       3306,
-		TLSMode:    tlsPreferred,
-		Ephemeral:  true,
+	c.Database = database
+	s.quick[id] = c
+	if err := s.saveQuickFile(); err != nil {
+		return nil, err
 	}
-	c.Name = autoName(&c)
-	s.quick[c.ID] = c
 	return &c, nil
 }
 
@@ -484,12 +543,11 @@ func (s *Service) Open(id string) (*State, error) {
 }
 
 // Close tears down a connection's sessions, pool and tunnel. A quick-connect
-// profile dies with its connection.
+// profile survives on purpose: its id anchors the workspace's saved tabs.
 func (s *Service) Close(id string) {
 	s.mu.Lock()
 	oc := s.open[id]
 	delete(s.open, id)
-	delete(s.quick, id)
 	s.mu.Unlock()
 	if oc != nil {
 		oc.teardown()

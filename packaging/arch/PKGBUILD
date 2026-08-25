@@ -2,7 +2,7 @@
 # in the mybench-arch container); set MYBENCH_SOURCE to a git URL to build a
 # remote rev instead. pkgver-pkgrel is the release version (RELEASE.md).
 pkgname=mybench
-pkgver=1.0.0
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="Fast MySQL GUI"
 arch=('x86_64')

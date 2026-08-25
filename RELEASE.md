@@ -2,7 +2,7 @@
 
 One commit per release — version bumps ride in the change commit, never a separate chore commit. Release version is `<pkgver>-<pkgrel>`.
 
-The app is the Qt GUI plus its Go backend — a sidecar process on Linux/macOS, linked into the exe on Windows; there is no web build any more. Release artifacts: the Windows exe, the Ubuntu .deb and the Arch package. macOS builds and zips (`task gui:build:macos` on a Mac, ad-hoc signed) but stays off the release list until it is signed with a real identity and notarised.
+The app is the Qt GUI plus its Go backend — a sidecar process on Linux/macOS, linked into the exe on Windows; there is no web build any more. Release artifacts: the Windows exe, the Ubuntu .deb, the Arch package, and the macOS .app zip (`task gui:build:macos` on a Mac). The mac bundle is ad-hoc signed — no paid Apple identity — so the release notes must carry the quarantine-clearing instruction (`xattr -dr com.apple.quarantine`) beside the build-from-source option.
 
 ## 1. Bump versions
 
@@ -27,7 +27,8 @@ Everything in the one release commit — committing BEFORE building keeps the `g
 
     git tag v<pkgver>-<pkgrel> && git push origin main v<pkgver>-<pkgrel>
     gh release create v<pkgver>-<pkgrel> --title "mybench <pkgver>-<pkgrel>" --notes "…" \
-      bin/mybench.exe bin/mybench_*_amd64.deb bin/mybench-*-x86_64.pkg.tar.zst
+      bin/mybench.exe bin/mybench_*_amd64.deb bin/mybench-*-x86_64.pkg.tar.zst \
+      bin/mybench-macos-*.zip
 
 ## 5. Install locally
 

@@ -581,19 +581,28 @@ void MainWindow::closeConnection(const QString &connID)
 {
     api()->post("conn", "Close", {connID});
     m_openIDs.removeAll(connID);
+    // Tabs go dormant, not away: editor content syncs back into the Tab
+    // entry (the widget dies with the pane) and openConnection() re-
+    // materialises them — disconnect/reconnect keeps a connection's tabs,
+    // the same way an app restart does.
+    for (Tab &t : m_tabs)
+    {
+        if (t.connID != connID)
+        {
+            continue;
+        }
+        if (auto *e = qobject_cast<EditorTab *>(t.widget))
+        {
+            t.sql = e->sql();
+            t.editorH = e->editorHeight();
+        }
+        t.widget = nullptr;
+    }
     if (QTabWidget *pane = m_panes.take(connID))
     {
         m_panesStack->removeWidget(pane);
         pane->deleteLater();
     }
-    for (qsizetype i = m_tabs.size() - 1; i >= 0; --i)
-    {
-        if (m_tabs.at(i).connID == connID)
-        {
-            m_tabs.removeAt(i);
-        }
-    }
-    m_activePerConn.remove(connID);
     if (m_activeConn == connID)
     {
         setActiveConnection(m_openIDs.isEmpty() ? QString() : m_openIDs.first());

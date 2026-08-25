@@ -144,11 +144,13 @@ func TestSaveDefaults(t *testing.T) {
 	}
 }
 
-// SaveQuick registers an in-memory profile: listed (flagged ephemeral) so the
-// shell can label its tab, never written to disk, gone once closed.
+// SaveQuick persists quick-connect profiles to quick.json with an id derived
+// from resource+user, so reconnecting reuses the profile (and the workspace
+// can restore its tabs) across restarts.
 func TestSaveQuick(t *testing.T) {
 	t.Parallel()
-	s := &Service{configDir: t.TempDir(), open: map[string]*openConn{}, quick: map[string]SavedConn{}}
+	dir := t.TempDir()
+	s := &Service{configDir: dir, open: map[string]*openConn{}, quick: map[string]SavedConn{}}
 
 	c, err := s.SaveQuick("prod-db", "reader", "app")
 	if err != nil {
@@ -161,28 +163,48 @@ func TestSaveQuick(t *testing.T) {
 		t.Fatalf("quick auto name: %q", c.Name)
 	}
 
-	// Same resource+user+database returns the same profile — a failed open
-	// retried must not pile up entries.
-	c2, err := s.SaveQuick("prod-db", "reader", "app")
+	// Same resource+user lands on the same id; the database is deliberately
+	// outside the id and updates in place — a changed default schema must
+	// not orphan the tabs saved under the old id.
+	c2, err := s.SaveQuick("prod-db", "reader", "other")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c2.ID != c.ID {
-		t.Fatalf("duplicate quick profile: %q vs %q", c2.ID, c.ID)
+	if c2.ID != c.ID || c2.Database != "other" {
+		t.Fatalf("reconnect: id %q vs %q, database %q", c2.ID, c.ID, c2.Database)
 	}
 
-	list := s.List()
-	if len(list) != 1 || !list[0].Ephemeral {
-		t.Fatalf("quick profile missing from List: %+v", list)
+	// A different user is a different connection (reader and admin side by
+	// side must both stay openable).
+	c3, err := s.SaveQuick("prod-db", "admin", "")
+	if err != nil {
+		t.Fatal(err)
 	}
-	// Nothing may reach the connections file.
-	if _, err := os.Stat(s.file()); !os.IsNotExist(err) {
-		t.Fatalf("quick profile touched disk: %v", err)
+	if c3.ID == c.ID {
+		t.Fatal("distinct users must get distinct ids")
 	}
 
+	// Close keeps the profile: its saved tabs outlive the connection.
 	s.Close(c.ID)
-	if len(s.List()) != 0 {
-		t.Fatal("quick profile survived Close")
+	if len(s.List()) != 2 {
+		t.Fatalf("profiles after Close: %+v", s.List())
+	}
+
+	// Persisted: a fresh service over the same config dir lists both, with
+	// the same ids. Nothing may reach the saved-connections file.
+	s2 := &Service{configDir: dir, open: map[string]*openConn{}, quick: map[string]SavedConn{}}
+	if err := s2.loadQuickFile(); err != nil {
+		t.Fatal(err)
+	}
+	list := s2.List()
+	if len(list) != 2 || !list[0].Ephemeral || !list[1].Ephemeral {
+		t.Fatalf("reloaded quick profiles: %+v", list)
+	}
+	if q, err := s2.SaveQuick("prod-db", "reader", "other"); err != nil || q.ID != c.ID {
+		t.Fatalf("id not stable across restart: %v, %+v", err, q)
+	}
+	if _, err := os.Stat(s.file()); !os.IsNotExist(err) {
+		t.Fatalf("quick profile touched connections.json: %v", err)
 	}
 
 	if _, err := s.SaveQuick("", "reader", ""); err == nil {
