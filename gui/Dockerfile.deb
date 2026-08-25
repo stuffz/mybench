@@ -1,0 +1,18 @@
+# Ubuntu build image for the .deb. Ubuntu 24.04 LTS is the floor we support:
+# building against its Qt 6.4 and glibc 2.39 keeps the package installable
+# there and on everything newer — a binary from the trixie image (Qt 6.8)
+# refuses to load on 24.04.
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build pkg-config \
+        qt6-base-dev qt6-svg-dev libgl-dev \
+        dpkg-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# The stock ubuntu:24.04 image ships an "ubuntu" user on uid 1000; reuse it so
+# build artifacts on the bind mount stay writable by the host user.
+USER ubuntu
+WORKDIR /work/gui

@@ -1,0 +1,278 @@
+# Included by the root Taskfile under the gui: namespace, and runnable
+# standalone from gui/. Every task pins its dir to the repo root via
+# TASKFILE_DIR (this file's directory), since the docker commands mount
+# "$PWD" as the whole tree; the vars below are standalone defaults and must
+# match the root Taskfile's.
+version: '3'
+
+vars:
+  APP_NAME: "mybench"
+  BIN_DIR: "bin"
+
+tasks:
+  default:
+    cmds:
+      - "{{.TASK_EXE}} --list"
+    silent: true
+
+  image:
+    desc: Build the Qt6 build image for the GUI (gui/Dockerfile)
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - docker build -t mybench-qt gui/
+
+  build:
+    desc: Build the Qt GUI into gui/build (plus the backend it drives)
+    dir: '{{.TASKFILE_DIR}}/..'
+    deps: [':backend:build']
+    cmds:
+      - docker run --rm -v "$PWD":/work -w /work/gui mybench-qt sh -c
+        'cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && ninja -C build'
+
+  run:
+    desc: Run the GUI on the host display (needs a built gui:build)
+    dir: '{{.TASKFILE_DIR}}/..'
+    deps: [build]
+    cmds:
+      - ./gui/build/mybench
+
+  image:windows:
+    desc: Build the Windows cross-build image (static Qt6 for MinGW — slow, cached)
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      # Builds a static Qt6 from source for mingw-w64; ~5 minutes on 16 cores
+      # the first time. The layer is cached, so later client builds are quick.
+      - docker build -t mybench-qt-win -f gui/Dockerfile.windows gui/
+
+  build:windows:
+    desc: Cross-build the GUI as one self-contained bin/mybench.exe (backend linked in)
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      # Statically linked, so bin/mybench.exe needs no Qt DLLs beside it.
+      # -static on the link line absorbs libgcc/libstdc++/winpthread as well,
+      # so the only imports left are DLLs Windows itself ships. The Go backend
+      # is linked in too, as a c-archive (cmd/mybench-backend-lib), so nothing
+      # ships beside the exe — no mybench-backend.exe sibling on Windows.
+      #
+      # The tree is copied to container-local disk first: on a Windows checkout
+      # reached over virtiofs/drvfs, CMake's configure_file gets EPERM on the
+      # bind mount. Only the finished exe is written back.
+      #
+      # The gomod volume (populated root-owned by the golang:trixie tasks) is
+      # readable by uid-1000 dev, and go.sum is already fully cached by any
+      # backend build, so the read-only GOFLAGS keep go from ever writing it.
+      - docker run --rm -v "$PWD":/work -v devcontainer_gomod:/go/pkg/mod
+        -e GOMODCACHE=/go/pkg/mod -e GOFLAGS=-mod=readonly mybench-qt-win bash -c
+        'set -e; mkdir -p /home/dev/r/build
+        && cp -r /work/gui /home/dev/r/gui
+        && cp -r /work/backend /home/dev/r/backend
+        && cp -r /work/build/windows /home/dev/r/build/windows
+        && cd /home/dev/r/backend
+        && GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc
+        go build -trimpath -buildvcs=false -buildmode=c-archive
+        -ldflags="-X github.com/stuffz/mybench/internal/buildinfo.Commit={{.COMMIT}}
+        -X github.com/stuffz/mybench/internal/buildinfo.Date={{.STAMP}}
+        -X github.com/stuffz/mybench/internal/buildinfo.Version={{.VERSION}}"
+        -o /home/dev/r/libmybench-backend.a ./cmd/mybench-backend-lib
+        && cd /home/dev/r/gui
+        && cmake -S . -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_TOOLCHAIN_FILE=/opt/qt6-win-static/lib/cmake/Qt6/qt.toolchain.cmake
+        -DCMAKE_EXE_LINKER_FLAGS="-static"
+        -DMYBENCH_EMBED_BACKEND=ON
+        -DMYBENCH_BACKEND_ARCHIVE=/home/dev/r/libmybench-backend.a
+        && cmake --build build-win --parallel
+        && x86_64-w64-mingw32-strip build-win/mybench.exe
+        && cp build-win/mybench.exe /work/{{.BIN_DIR}}/{{.APP_NAME}}.exe'
+    vars:
+      COMMIT:
+        sh: git describe --always --dirty 2>/dev/null || echo dev
+      STAMP:
+        sh: date -u +%Y-%m-%dT%H:%M:%SZ
+      # The one version source, shared with the GUI's app.rc (RELEASE.md).
+      VERSION:
+        sh: sed -n 's/.*"file_version". *"\([^"]*\)".*/\1/p' build/windows/info.json
+
+  image:deb:
+    desc: Build the Ubuntu 24.04 build image for the .deb (gui/Dockerfile.deb)
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - docker build -t mybench-qt-deb -f gui/Dockerfile.deb gui/
+
+  build:deb:
+    desc: Build bin/mybench_<version>_amd64.deb against Ubuntu 24.04 (the Qt 6.4 floor)
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      # Ubuntu 24.04 LTS is the support floor: its Qt 6.4 and glibc 2.39 are
+      # older than the trixie dev image's, so the deb gets its own build tree.
+      - docker run --rm -v "$PWD":/work -w /work/gui mybench-qt-deb sh -c
+        'cmake -S . -B build-deb -G Ninja -DCMAKE_BUILD_TYPE=Release
+        && ninja -C build-deb && strip build-deb/mybench'
+      # The backend is static (CGO off), so building it in trixie is fine.
+      - docker run --rm -v "$PWD":/work -v devcontainer_gomod:/go/pkg/mod -w /work/backend
+        -e CGO_ENABLED=0 golang:trixie
+        go build -trimpath -buildvcs=false
+        -ldflags="-s -w -X github.com/stuffz/mybench/internal/buildinfo.Commit={{.COMMIT}}
+        -X github.com/stuffz/mybench/internal/buildinfo.Date={{.STAMP}}
+        -X github.com/stuffz/mybench/internal/buildinfo.Version={{.VERSION}}"
+        -o /work/gui/build-deb/mybench-backend ./cmd/mybench-backend
+      # Assembly and Depends generation live in the script — dpkg-shlibdeps
+      # needs the Ubuntu Qt packages around it, which only that image has.
+      - docker run --rm -v "$PWD":/work -e VERSION={{.VERSION}} mybench-qt-deb
+        sh /work/packaging/deb/build-deb.sh
+    vars:
+      COMMIT:
+        sh: git rev-parse --short HEAD
+      STAMP:
+        sh: date -u +%Y-%m-%dT%H:%M:%SZ
+      # info.json's 0.1.0.10 as the deb's 0.1.0-10 (pkgver-pkgrel).
+      VERSION:
+        sh: sed -n 's/.*"file_version". *"\([^"]*\)".*/\1/p' build/windows/info.json
+          | sed 's/\.\([0-9]*\)$/-\1/'
+
+  test:deb:
+    desc: Install the built .deb in a clean ubuntu:24.04 and launch it under Xvfb
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - docker run --rm -v "$PWD":/work -e DEBIAN_FRONTEND=noninteractive ubuntu:24.04
+        sh /work/packaging/deb/smoke-deb.sh
+
+  image:arch:
+    desc: Build the Arch packaging image (gui/Dockerfile.arch)
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - docker build -t mybench-arch -f gui/Dockerfile.arch gui/
+
+  build:arch:
+    desc: Build bin/mybench-<version>-x86_64.pkg.tar.zst from the local tree
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      # makepkg clones the mounted repo (PKGBUILD's file:///work source), so
+      # the package always builds the committed HEAD, never a dirty tree.
+      - docker run --rm -v "$PWD":/work mybench-arch bash -c
+        'set -e; cp -r /work/packaging/arch /tmp/pkg && cd /tmp/pkg
+        && makepkg --noconfirm && cp mybench-*.pkg.tar.* /work/{{.BIN_DIR}}/'
+
+  format:
+    desc: Rewrite GUI sources with clang-format (config in gui/.clang-format)
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - docker run --rm -v "$PWD":/work -w /work/gui mybench-qt sh -c
+        'clang-format -i src/*/*.cpp src/*/*.h'
+
+  format-check:
+    desc: Verify GUI sources are clang-format clean (used by CI)
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - docker run --rm -v "$PWD":/work -w /work/gui mybench-qt sh -c
+        'clang-format --dry-run --Werror src/*/*.cpp src/*/*.h'
+
+  lint:
+    desc: clang-tidy over the GUI sources (checks in gui/.clang-tidy)
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      # tidy needs a compile database and the AUTOMOC/qrc outputs, so configure
+      # and build a dedicated tree first — on container-local disk, because
+      # CMake's configure step gets EPERM on a drvfs/virtiofs bind mount (same
+      # workaround as gui:build:windows; the mount is read-only input here).
+      # WarningsAsErrors lives here, not in .clang-tidy, so clangd editor
+      # diagnostics stay warnings.
+      # HAVE_NO_DIRECT_EXTERN_ACCESS=OFF: -mno-direct-extern-access is a
+      # GCC-only flag; clang (which tidy parses with) rejects it.
+      # The last step parses each header standalone with compile_flags.txt —
+      # exactly what editor clangd does — so a warning only visible that way
+      # (an unused internal-linkage constant, say) fails here, not in Zed.
+      - docker run --rm -v "$PWD":/work mybench-qt sh -c
+        'set -e; cp -r /work/gui /tmp/gui && cd /tmp/gui
+        && cmake -S . -B build-lint -G Ninja -DCMAKE_BUILD_TYPE=Debug
+        -DHAVE_NO_DIRECT_EXTERN_ACCESS=OFF
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_CXX_FLAGS="-Wall -Wextra"
+        && ninja -C build-lint
+        && ls src/*/*.cpp | xargs -P "$(nproc)" -I{}
+        clang-tidy --quiet --warnings-as-errors="*" -p build-lint {}
+        && echo "clang-tidy clean"
+        && ls src/*/*.h | xargs -P "$(nproc)" -I{}
+        clang++-19 @compile_flags.txt -fsyntax-only -Wno-pragma-once-outside-header -Werror {}
+        && echo "headers parse standalone"'
+
+  install:
+    desc: Build stripped Release binaries and install them into ~/.local/bin
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      # Release + stripped for the installed copy; gui:build stays
+      # RelWithDebInfo for development.
+      - docker run --rm -v "$PWD":/work -w /work/gui mybench-qt sh -c
+        'cmake -S . -B build-rel -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja -C build-rel
+        && strip build-rel/mybench'
+      # The backend is pure Go; CGO off keeps it static and portable. Built in
+      # a container like everything else — nothing installs on the host.
+      - docker run --rm -v "$PWD":/work -v devcontainer_gomod:/go/pkg/mod -w /work/backend
+        -e CGO_ENABLED=0 golang:trixie
+        go build -trimpath -buildvcs=false
+        -ldflags="-s -w -X github.com/stuffz/mybench/internal/buildinfo.Commit={{.COMMIT}}
+        -X github.com/stuffz/mybench/internal/buildinfo.Date={{.STAMP}}
+        -X github.com/stuffz/mybench/internal/buildinfo.Version={{.VERSION}}"
+        -o /work/gui/build-rel/mybench-backend ./cmd/mybench-backend
+      - install -Dm755 gui/build-rel/mybench "$HOME/.local/bin/mybench"
+      - install -Dm755 gui/build-rel/mybench-backend "$HOME/.local/bin/mybench-backend"
+      - install -Dm644 build/appicon.png "$HOME/.local/share/icons/hicolor/512x512/apps/mybench.png"
+    vars:
+      COMMIT:
+        sh: git rev-parse --short HEAD
+      STAMP:
+        sh: date -u +%Y-%m-%dT%H:%M:%SZ
+      VERSION:
+        sh: sed -n 's/.*"file_version". *"\([^"]*\)".*/\1/p' build/windows/info.json
+
+  build:macos:
+    desc: Build the ad-hoc-signed .app and zip it into bin/ — run on a Mac
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      # The backend, cross-compiled to darwin in the same golang container the
+      # other backend builds use (Docker Desktop provides the daemon on a Mac).
+      - mkdir -p {{.BIN_DIR}}
+      - docker run --rm -v "$PWD":/work -v devcontainer_gomod:/go/pkg/mod -w /work/backend
+        -e GOOS=darwin -e GOARCH={{.GOARCH}} -e CGO_ENABLED=0 golang:trixie
+        go build -trimpath -buildvcs=false
+        -ldflags="-s -w -X github.com/stuffz/mybench/internal/buildinfo.Commit={{.COMMIT}}
+        -X github.com/stuffz/mybench/internal/buildinfo.Date={{.STAMP}}
+        -X github.com/stuffz/mybench/internal/buildinfo.Version={{.VERSION}}"
+        -o "/work/{{.BIN_DIR}}/{{.APP_NAME}}-backend" ./cmd/mybench-backend
+      # The GUI builds natively — Qt has no macOS cross toolchain in a
+      # container the way Dockerfile.windows provides one for MinGW.
+      - cmake -S gui -B gui/build-rel -G Ninja -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
+      - cmake --build gui/build-rel --parallel
+      - strip gui/build-rel/mybench.app/Contents/MacOS/mybench
+      # The sidecar rides inside the bundle: the client's first lookup is
+      # beside its own executable, which in a bundle is Contents/MacOS.
+      - install -m755 "{{.BIN_DIR}}/{{.APP_NAME}}-backend"
+        gui/build-rel/mybench.app/Contents/MacOS/{{.APP_NAME}}-backend
+      # Bundle the Qt frameworks and plugins so the app survives a brew
+      # upgrade, then re-sign: macdeployqt rewrites load paths, which voids
+      # the link-time ad-hoc signature, and unsigned code will not launch on
+      # Apple Silicon. Ad-hoc ("-") is local-install grade — distribution
+      # needs a real signing identity and notarisation (RELEASE.md).
+      - "\"$(brew --prefix qt)/bin/macdeployqt\" gui/build-rel/mybench.app"
+      - codesign --force --deep --sign - gui/build-rel/mybench.app
+      - ditto -c -k --keepParent gui/build-rel/mybench.app
+        {{.BIN_DIR}}/{{.APP_NAME}}-macos-{{.GOARCH}}.zip
+    vars:
+      GOARCH:
+        sh: uname -m | sed s/x86_64/amd64/
+      COMMIT:
+        sh: git rev-parse --short HEAD
+      STAMP:
+        sh: date -u +%Y-%m-%dT%H:%M:%SZ
+      VERSION:
+        sh: sed -n 's/.*"file_version". *"\([^"]*\)".*/\1/p' build/windows/info.json
+
+  install:macos:
+    desc: Build and install /Applications/mybench.app — run on a Mac
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - task: build:macos
+      - rm -rf /Applications/mybench.app
+      - ditto gui/build-rel/mybench.app /Applications/mybench.app

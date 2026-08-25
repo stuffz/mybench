@@ -1,0 +1,12 @@
+Package: mybench
+Version: @VERSION@
+Architecture: amd64
+Maintainer: stuffz <8736837+stuffz@users.noreply.github.com>
+Depends: @DEPENDS@
+Section: database
+Priority: optional
+Homepage: https://github.com/stuffz/mybench
+Description: Fast MySQL GUI
+ Run queries, browse schemas, and manage users and client connections,
+ with first-class Teleport tunnelling. Multiple servers open
+ simultaneously in one window.

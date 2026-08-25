@@ -1,0 +1,43 @@
+<!DOCTYPE RCC><RCC version="1.0">
+  <qresource prefix="/fonts">
+    <file alias="RobotoMonoNerdFont-Regular.ttf">assets/fonts/RobotoMonoNerdFont-Regular.ttf</file>
+    <file alias="RobotoMonoNerdFont-Medium.ttf">assets/fonts/RobotoMonoNerdFont-Medium.ttf</file>
+    <file alias="RobotoMonoNerdFont-Bold.ttf">assets/fonts/RobotoMonoNerdFont-Bold.ttf</file>
+    <file alias="RobotoMonoNerdFont-Italic.ttf">assets/fonts/RobotoMonoNerdFont-Italic.ttf</file>
+  </qresource>
+  <qresource prefix="/icons">
+    <file alias="activity.svg">assets/icons/activity.svg</file>
+    <file alias="bookmark.svg">assets/icons/bookmark.svg</file>
+    <file alias="check.svg">assets/icons/check.svg</file>
+    <file alias="chevron-down.svg">assets/icons/chevron-down.svg</file>
+    <file alias="circle-stop.svg">assets/icons/circle-stop.svg</file>
+    <file alias="clock.svg">assets/icons/clock.svg</file>
+    <file alias="cpu.svg">assets/icons/cpu.svg</file>
+    <file alias="database.svg">assets/icons/database.svg</file>
+    <file alias="database-zap.svg">assets/icons/database-zap.svg</file>
+    <file alias="eye.svg">assets/icons/eye.svg</file>
+    <file alias="file-down.svg">assets/icons/file-down.svg</file>
+    <file alias="gauge.svg">assets/icons/gauge.svg</file>
+    <file alias="history.svg">assets/icons/history.svg</file>
+    <file alias="info.svg">assets/icons/info.svg</file>
+    <file alias="keyboard.svg">assets/icons/keyboard.svg</file>
+    <file alias="network.svg">assets/icons/network.svg</file>
+    <file alias="pencil.svg">assets/icons/pencil.svg</file>
+    <file alias="play.svg">assets/icons/play.svg</file>
+    <file alias="plus.svg">assets/icons/plus.svg</file>
+    <file alias="rotate-cw.svg">assets/icons/rotate-cw.svg</file>
+    <file alias="route.svg">assets/icons/route.svg</file>
+    <file alias="settings.svg">assets/icons/settings.svg</file>
+    <file alias="square-play.svg">assets/icons/square-play.svg</file>
+    <file alias="move-down.svg">assets/icons/move-down.svg</file>
+    <file alias="move-up.svg">assets/icons/move-up.svg</file>
+    <file alias="table-2.svg">assets/icons/table-2.svg</file>
+    <file alias="timer.svg">assets/icons/timer.svg</file>
+    <file alias="trash-2.svg">assets/icons/trash-2.svg</file>
+    <file alias="undo-2.svg">assets/icons/undo-2.svg</file>
+    <file alias="users.svg">assets/icons/users.svg</file>
+    <file alias="wand-sparkles.svg">assets/icons/wand-sparkles.svg</file>
+    <file alias="waypoints.svg">assets/icons/waypoints.svg</file>
+    <file alias="x.svg">assets/icons/x.svg</file>
+  </qresource>
+</RCC>

@@ -1,0 +1,53 @@
+# Run with: task native:lint (clang-tidy inside the build container).
+#
+# clang-diagnostic-* is included on purpose: it is what surfaces compiler
+# warnings such as -Winconsistent-missing-override, which the -Wall -Wextra
+# build was missing.
+Checks: >
+  -*,
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  portability-*,
+  misc-*,
+  cert-*,
+  -bugprone-easily-swappable-parameters,
+  -misc-non-private-member-variables-in-classes,
+  -misc-const-correctness,
+  -performance-avoid-endl,
+  -performance-enum-size,
+  -portability-avoid-pragma-once,
+  -clang-analyzer-cplusplus.NewDeleteLeaks
+
+# Why the exclusions:
+#
+#   bugprone-easily-swappable-parameters   Qt geometry and colour helpers take
+#                                          runs of same-typed arguments by design.
+#   misc-non-private-member-variables-in-classes
+#                                          The widget classes expose their child
+#                                          pointers to their own subclasses.
+#   misc-const-correctness                 Advises const on QApplication and
+#                                          QAction*, where it is wrong or pointless.
+#   performance-avoid-endl                 Reserved: the console paths want the flush.
+#   performance-enum-size                  A handful of small enums, none stored in bulk.
+#   portability-avoid-pragma-once          Project-wide convention; every targeted
+#                                          compiler supports it.
+#   clang-analyzer-cplusplus.NewDeleteLeaks
+#                                          Two structural false positives it cannot
+#                                          see through: Qt ownership transfer
+#                                          (QApplication::setStyle(new ...)) and the
+#                                          heap storage inside std::function's copy
+#                                          constructor, which every Api::call goes
+#                                          through. Being path-sensitive it reports on
+#                                          whichever line it loses the pointer, so
+#                                          NOLINT anchors drift on every reformat.
+
+CheckOptions:
+  misc-include-cleaner.IgnoreHeaders: 'q[a-z_0-9]+\.h;bits/.*'
+
+HeaderFilterRegex: 'src/.*'
+
+# WarningsAsErrors intentionally lives in the lint task, not here: clangd reads
+# this file too, and promoting everything to errors makes every editor
+# diagnostic red.

@@ -1,0 +1,14 @@
+# Arch packaging image: everything makepkg needs for the PKGBUILD in
+# packaging/arch, so the package builds in a container like every other
+# artifact — nothing installs on the host.
+FROM archlinux:latest
+
+RUN pacman -Syu --noconfirm --needed \
+        base-devel git go cmake ninja qt6-base qt6-svg \
+    && rm -rf /var/cache/pacman/pkg
+
+# makepkg refuses to run as root; uid 1000 matches the host user so the
+# cloned tree on the bind mount reads cleanly.
+RUN useradd -m -u 1000 builder
+USER builder
+WORKDIR /home/builder

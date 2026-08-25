@@ -1,0 +1,98 @@
+# Included by the root Taskfile under the backend: namespace, and runnable
+# standalone from backend/. Every task pins its dir via TASKFILE_DIR (this
+# file's directory), so both entries behave identically; the vars below are
+# standalone defaults and must match the root Taskfile's.
+version: '3'
+
+vars:
+  APP_NAME: "mybench"
+  BIN_DIR: "bin"
+  # Prefix that runs a wrapped command inside the devcontainer (where the Go
+  # toolchain, golangci-lint and MYBENCH_TEST_DSN live); empty when already
+  # inside it, so the same tasks work from a devcontainer terminal. Replace
+  # this one value to change the mechanism (docker exec, ssh, …).
+  DEVC:
+    sh: test -f /.dockerenv && echo "" || echo "devcontainer exec --workspace-folder {{.TASKFILE_DIR}}/.."
+
+tasks:
+  default:
+    cmds:
+      - "{{.TASK_EXE}} --list"
+    silent: true
+
+  build:
+    desc: Build the headless backend the GUI drives (bin/mybench-backend)
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      # In a container like every other build here, so the host needs docker
+      # and task and nothing else — this ran host `go` before, which quietly
+      # made a Go toolchain a requirement for gui:build and gui:run.
+      # bin/ is made on the host first: created by the container it would be
+      # root-owned and `task clean` could not remove it.
+      # -buildvcs=false like the sibling backend tasks: as root in the
+      # container, git refuses the uid-1000 .git as dubiously owned and the
+      # VCS stamp aborts the build.
+      # No `go mod tidy` here — a build should not rewrite go.mod, and as root
+      # on the bind mount it would leave it root-owned. That is `task tidy`;
+      # neither gui:install nor backend:build:windows tidies either.
+      - mkdir -p {{.BIN_DIR}}
+      - docker run --rm -v "$PWD":/work -v devcontainer_gomod:/go/pkg/mod -w /work/backend
+        -e CGO_ENABLED=0 golang:trixie
+        go build -buildvcs=false
+        -o "/work/{{.BIN_DIR}}/{{.APP_NAME}}-backend" ./cmd/mybench-backend
+
+  build:windows:
+    desc: Cross-compile the backend the GUI drives (bin/mybench-backend.exe)
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      # Build stamp for the About dialog — computed on the host, so the
+      # container needs no git. Without it releases report "build dev".
+      - docker run --rm -v "$PWD":/work -v devcontainer_gomod:/go/pkg/mod -w /work/backend
+        -e GOOS=windows -e GOARCH=amd64 -e CGO_ENABLED=0 golang:trixie
+        go build -trimpath -buildvcs=false
+        -ldflags="-s -w -X github.com/stuffz/mybench/internal/buildinfo.Commit={{.COMMIT}}
+        -X github.com/stuffz/mybench/internal/buildinfo.Date={{.STAMP}}
+        -X github.com/stuffz/mybench/internal/buildinfo.Version={{.VERSION}}"
+        -o "/work/{{.BIN_DIR}}/{{.APP_NAME}}-backend.exe" ./cmd/mybench-backend
+    vars:
+      COMMIT:
+        sh: git describe --always --dirty 2>/dev/null || echo dev
+      STAMP:
+        sh: date -u +%Y-%m-%dT%H:%M:%SZ
+      # The one version source, shared with the GUI's app.rc (RELEASE.md).
+      VERSION:
+        sh: sed -n 's/.*"file_version". *"\([^"]*\)".*/\1/p' build/windows/info.json
+
+  # The toolchain tasks below run inside the devcontainer via {{.DEVC}}.
+  # devcontainer exec lands in the workspace folder (/work), so each command
+  # cd's into backend/ itself and the task dir is the repo root — that way
+  # the same line works on the host and in a devcontainer terminal.
+  test:
+    desc: Go tests, inside the devcontainer (MYBENCH_TEST_DSN lives there)
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - '{{.DEVC}} sh -c "cd backend && go test ./... {{.CLI_ARGS}}"'
+
+  lint:
+    desc: golangci-lint per backend/.golangci.yml, inside the devcontainer
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - '{{.DEVC}} sh -c "cd backend && golangci-lint run ./... {{.CLI_ARGS}}"'
+
+  format:
+    desc: Rewrite backend sources with gofumpt (golangci-lint fmt), inside the devcontainer
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - '{{.DEVC}} sh -c "cd backend && golangci-lint fmt"'
+
+  format-check:
+    desc: Verify backend sources are gofumpt clean (used by CI), inside the devcontainer
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - '{{.DEVC}} sh -c "cd backend && golangci-lint fmt --diff"'
+
+  tidy:
+    desc: go mod tidy, inside the devcontainer
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - '{{.DEVC}} sh -c "cd backend && go mod tidy"'

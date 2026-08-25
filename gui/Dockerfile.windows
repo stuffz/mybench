@@ -1,0 +1,78 @@
+# Windows cross-build image for the GUI: one self-contained .exe,
+# no Qt DLLs beside it.
+#
+# Why Fedora rather than the Debian base the Linux image uses: nobody packages
+# a static Qt6 for MinGW, so it has to be built here, and Fedora is the only
+# distro shipping a mingw-w64 toolchain (GCC 16) together with a *native* Qt of
+# the exact same version (6.11.1). Qt's cross-build needs both — the host Qt
+# supplies moc/rcc/uic, and Qt refuses a host/target version mismatch.
+FROM fedora:44 AS qt-src
+
+RUN dnf install -y --setopt=install_weak_deps=False \
+        mingw64-gcc mingw64-gcc-c++ mingw64-winpthreads-static \
+        cmake ninja-build perl python3 patch xz which findutils \
+        qt6-qtbase-devel \
+    && dnf clean all
+
+# Must match qt6-qtbase-devel above: Qt validates host == target version.
+ARG QT_VERSION=6.11.1
+ARG QT_URL=https://download.qt.io/official_releases/qt/6.11/${QT_VERSION}/submodules
+
+WORKDIR /src
+RUN curl -fsSL -o qtbase.tar.xz "${QT_URL}/qtbase-everywhere-src-${QT_VERSION}.tar.xz" \
+    && curl -fsSL -o qtsvg.tar.xz "${QT_URL}/qtsvg-everywhere-src-${QT_VERSION}.tar.xz" \
+    && tar xf qtbase.tar.xz && tar xf qtsvg.tar.xz && rm -f ./*.tar.xz
+
+# Split here so the Qt build can be iterated on without re-downloading 250MB.
+FROM qt-src AS qt-static
+ARG QT_VERSION=6.11.1
+
+# -static with Qt's bundled zlib/png/freetype/harfbuzz/pcre so the link needs
+# nothing from the target system beyond the system DLLs Windows always has.
+# -opengl desktop rather than -no-opengl: it resolves against opengl32, which
+# is always present, and avoids QtGui's no-OpenGL edge cases.
+# The target toolchain comes from Fedora's mingw cmake toolchain file, not the
+# qmake-era -xplatform/CROSS_COMPILE options: Qt6 configure is a CMake wrapper,
+# and those leave CMake using the host compiler, which then dies on <tchar.h>.
+RUN cd qtbase-everywhere-src-${QT_VERSION} \
+    && ./configure -static -release -opensource -confirm-license \
+        -qt-host-path /usr \
+        -prefix /opt/qt6-win-static \
+        -qt-zlib -qt-libpng -qt-freetype -qt-harfbuzz -qt-pcre \
+        -no-icu -no-dbus -opengl desktop \
+        -nomake examples -nomake tests \
+        -- -DCMAKE_TOOLCHAIN_FILE=/usr/share/mingw/toolchain-mingw64.cmake \
+    && cmake --build . --parallel \
+    && cmake --install . \
+    && cd /src && rm -rf qtbase-everywhere-src-${QT_VERSION}
+
+# Svg is a hard dependency: the client renders every icon from the qrc'd SVGs.
+# Configured through the generated toolchain file rather than
+# qt-configure-module, which expects the target's own (Windows) tooling.
+RUN cd qtsvg-everywhere-src-${QT_VERSION} \
+    && cmake -S . -B build -G Ninja \
+        -DCMAKE_TOOLCHAIN_FILE=/opt/qt6-win-static/lib/cmake/Qt6/qt.toolchain.cmake \
+        -DQT_HOST_PATH=/usr \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/opt/qt6-win-static \
+    && cmake --build build --parallel \
+    && cmake --install build \
+    && cd /src && rm -rf qtsvg-everywhere-src-${QT_VERSION}
+
+# ---------------------------------------------------------------------------
+# Thin final image: the static Qt plus the toolchain, without the Qt sources.
+# golang is here too: the backend is linked into the exe as a c-archive
+# (cmd/mybench-backend-lib), cross-compiled with the same mingw toolchain.
+FROM fedora:44
+
+RUN dnf install -y --setopt=install_weak_deps=False \
+        mingw64-gcc mingw64-gcc-c++ mingw64-winpthreads-static \
+        cmake ninja-build qt6-qtbase-devel which golang \
+    && dnf clean all
+
+COPY --from=qt-static /opt/qt6-win-static /opt/qt6-win-static
+
+# Match the host uid so artefacts on the bind mount stay writable.
+RUN useradd -m -u 1000 dev
+USER dev
+WORKDIR /work/gui

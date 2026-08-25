@@ -1,0 +1,44 @@
+# Built from the local tree by `task gui:build:arch` (repo mounted at /work
+# in the mybench-arch container); set MYBENCH_SOURCE to a git URL to build a
+# remote rev instead. pkgver-pkgrel is the release version (RELEASE.md).
+pkgname=mybench
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Fast MySQL GUI"
+arch=('x86_64')
+url="https://github.com/stuffz/mybench"
+license=('MIT')
+depends=('qt6-base' 'qt6-svg')
+makedepends=('git' 'go' 'cmake' 'ninja')
+options=('!debug')
+source=("$pkgname::git+${MYBENCH_SOURCE:-file:///work}")
+sha256sums=('SKIP')
+
+build() {
+    cd "$srcdir/$pkgname"
+    local commit stamp
+    commit=$(git rev-parse --short HEAD)
+    stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # The backend is pure Go; CGO off keeps it static.
+    (cd backend && CGO_ENABLED=0 go build -trimpath -buildvcs=false \
+        -ldflags "-s -w \
+        -X github.com/stuffz/mybench/internal/buildinfo.Commit=$commit \
+        -X github.com/stuffz/mybench/internal/buildinfo.Date=$stamp \
+        -X github.com/stuffz/mybench/internal/buildinfo.Version=$pkgver-$pkgrel" \
+        -o "$srcdir/$pkgname/mybench-backend" ./cmd/mybench-backend)
+
+    cmake -S gui -B gui/build-pkg -G Ninja -DCMAKE_BUILD_TYPE=Release
+    cmake --build gui/build-pkg --parallel
+}
+
+package() {
+    cd "$srcdir/$pkgname"
+    install -Dm755 gui/build-pkg/mybench "$pkgdir/usr/bin/mybench"
+    install -Dm755 mybench-backend "$pkgdir/usr/bin/mybench-backend"
+    install -Dm644 packaging/linux/mybench.desktop \
+        "$pkgdir/usr/share/applications/mybench.desktop"
+    install -Dm644 build/appicon.png \
+        "$pkgdir/usr/share/icons/hicolor/512x512/apps/mybench.png"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
