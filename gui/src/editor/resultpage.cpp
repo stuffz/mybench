@@ -5,10 +5,18 @@
 #include "editor/resultgrid.h"
 #include "editor/resultmodel.h"
 
+#include <QHBoxLayout>
 #include <QJsonArray>
 #include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QShortcut>
 #include <QStackedWidget>
+#include <QTimer>
 #include <QVBoxLayout>
+
+// Keystrokes settle before each backend Filter round-trip.
+constexpr int FilterDebounceMs = 200;
 
 ResultPage::ResultPage(const QString &sql, QWidget *parent) : QWidget(parent), m_sql(sql)
 {
@@ -26,10 +34,40 @@ ResultPage::ResultPage(const QString &sql, QWidget *parent) : QWidget(parent), m
     m_summary->setWordWrap(true);
     m_summary->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
+    // Ctrl+F filter bar, hidden until asked for; Esc clears and hides it.
+    m_filterBar = new QWidget;
+    auto *filterLay = new QHBoxLayout(m_filterBar);
+    filterLay->setContentsMargins(6, 6, 6, 6);
+    filterLay->setSpacing(6);
+    m_filterEdit = new QLineEdit;
+    m_filterEdit->setPlaceholderText(tr("Filter Rows (fuzzy)"));
+    m_filterEdit->setClearButtonEnabled(true);
+    auto *filterClose = new QPushButton(QStringLiteral("×"));
+    filterClose->setProperty("variant", "ghost");
+    filterClose->setToolTip(tr("Clear Filter (Esc)"));
+    filterLay->addWidget(m_filterEdit, 1);
+    filterLay->addWidget(filterClose);
+    m_filterBar->setVisible(false);
+    root->addWidget(m_filterBar);
+
     m_stack = new QStackedWidget;
     m_stack->addWidget(m_grid);
     m_stack->addWidget(m_summary);
     root->addWidget(m_stack);
+
+    m_filterDebounce = new QTimer(this);
+    m_filterDebounce->setSingleShot(true);
+    m_filterDebounce->setInterval(FilterDebounceMs);
+    connect(m_filterDebounce, &QTimer::timeout, this, &ResultPage::requestFilter);
+    connect(m_filterEdit, &QLineEdit::textChanged, m_filterDebounce, qOverload<>(&QTimer::start));
+    connect(filterClose, &QPushButton::clicked, this, &ResultPage::hideFilterBar);
+
+    auto *findKey = new QShortcut(QKeySequence::Find, this);
+    findKey->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(findKey, &QShortcut::activated, this, &ResultPage::showFilterBar);
+    auto *escKey = new QShortcut(Qt::Key_Escape, m_filterEdit);
+    escKey->setContext(Qt::WidgetShortcut);
+    connect(escKey, &QShortcut::activated, this, &ResultPage::hideFilterBar);
 
     connect(m_grid, &ResultGrid::sortRequested, this, &ResultPage::sortRequested);
     connect(m_model, &ResultModel::stagedChanged, this, &ResultPage::stagedChanged);
@@ -59,6 +97,7 @@ void ResultPage::applyState(const QJsonObject &state)
     m_done = state.value("done").toBool();
     m_capped = state.value("capped").toBool();
     m_rowCount = state.value("rowCount").toInt();
+    m_totalRows = state.value("totalRows").toInt();
     m_error = state.value("error").toString();
 
     QVector<ColumnMeta> cols;
@@ -102,6 +141,70 @@ void ResultPage::applyState(const QJsonObject &state)
     }
 
     emit stateChanged();
+}
+
+void ResultPage::showFilterBar()
+{
+    if (!m_done || m_stack->currentWidget() != m_grid)
+    {
+        return;
+    }
+    m_filterBar->setVisible(true);
+    m_filterEdit->setFocus();
+    m_filterEdit->selectAll();
+}
+
+void ResultPage::hideFilterBar()
+{
+    // Dropping the filter refetches windows and would orphan staged edits;
+    // requestFilter refuses below, so don't hide a bar that stays active.
+    if (!m_filter.isEmpty() && !m_model->staged().isEmpty())
+    {
+        emit errorRaised(tr("apply or discard the staged edits before clearing the filter"));
+        return;
+    }
+    m_filterBar->setVisible(false);
+    m_filterEdit->clear();
+    // clear() restarts the debounce via textChanged; drop the filter now
+    // instead of a beat later.
+    m_filterDebounce->stop();
+    requestFilter();
+    m_grid->setFocus();
+}
+
+void ResultPage::requestFilter()
+{
+    const QString needle = m_filterEdit->text().trimmed();
+    if (needle == m_filter || m_resultId.isEmpty() || !m_done)
+    {
+        return;
+    }
+    if (!m_model->staged().isEmpty())
+    {
+        emit errorRaised(tr("apply or discard the staged edits before filtering"));
+        return;
+    }
+    const QString id = m_resultId;
+    api()->call(
+        "query", "Filter", {id, needle}, this,
+        [this, id, needle](const QJsonValue &res, const QString &err)
+        {
+            if (id != m_resultId)
+            {
+                return;
+            }
+            if (!err.isEmpty())
+            {
+                emit errorRaised(err);
+                return;
+            }
+            m_filter = needle;
+            // Filter returns the new ResultState; every cached window
+            // predates the new view, so refetch them all.
+            applyState(res.toObject());
+            m_model->invalidateWindows();
+        }
+    );
 }
 
 void ResultPage::resolveEditability()

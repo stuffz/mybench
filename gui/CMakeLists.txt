@@ -37,6 +37,7 @@ qt_add_executable(mybench
     src/dialogs/prefsdialog.cpp
     src/dialogs/aboutdialog.cpp
     src/dialogs/shortcutsdialog.cpp
+    src/dialogs/importrowsdialog.cpp
     src/editor/editortab.cpp
     src/editor/sqleditor.cpp
     src/editor/sqlscan.cpp

@@ -30,6 +30,7 @@ public:
 signals:
     void tabRequested(const TabRequest &req);
     void graphFocusRequested(const QString &schema, const QString &table);
+    void importRowsRequested(const QString &schema, const QString &table);
     void errorRaised(const QString &message);
 
 private:

@@ -125,6 +125,126 @@ func TestSortWhileStreamingRefused(t *testing.T) {
 	}
 }
 
+func TestFilterFuzzy(t *testing.T) {
+	t.Parallel()
+	rs := newResultStore()
+	id := rs.add(
+		[]Column{{Name: "name", Type: "VARCHAR"}, {Name: "city", Type: "VARCHAR"}},
+		nil, "c1", "t1", "SELECT 1",
+	)
+	r, _ := rs.get(id)
+	r.rows = [][]*string{
+		{strp("John Smith"), strp("Berlin")},
+		{strp("Jane Doe"), strp("Oslo")},
+		{strp("Bob Jones"), nil},
+	}
+	r.finish(false, "")
+
+	// Fuzzy: subsequence, case-insensitive — "jsm" hits only "John Smith".
+	if err := r.filterBy("JSM"); err != nil {
+		t.Fatal(err)
+	}
+	st := r.state(id)
+	if st.RowCount != 1 || st.TotalRows != 3 {
+		t.Fatalf("got rowCount=%d totalRows=%d, want 1/3", st.RowCount, st.TotalRows)
+	}
+	w, err := r.window(0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w.Rows) != 1 || *w.Rows[0][0] != "John Smith" {
+		t.Fatalf("window should hold the one match, got %d rows", len(w.Rows))
+	}
+
+	// Every term must match some cell: name from one column, city from another.
+	if err := r.filterBy("jane oslo"); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.state(id).RowCount; got != 1 {
+		t.Fatalf("multi-term: got %d rows, want 1", got)
+	}
+	if err := r.filterBy("jane berlin"); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.state(id).RowCount; got != 0 {
+		t.Fatalf("non-matching term must exclude the row, got %d", got)
+	}
+
+	// Empty needle clears the filter.
+	if err := r.filterBy(""); err != nil {
+		t.Fatal(err)
+	}
+	st = r.state(id)
+	if st.RowCount != 3 || st.TotalRows != 3 {
+		t.Fatalf("cleared: got rowCount=%d totalRows=%d, want 3/3", st.RowCount, st.TotalRows)
+	}
+}
+
+func TestFilterWhileStreamingRefused(t *testing.T) {
+	t.Parallel()
+	rs := newResultStore()
+	id := rs.add([]Column{{Name: "n", Type: "int"}}, nil, "c1", "t1", "SELECT 1")
+	r, _ := rs.get(id)
+	r.append(cells("1"))
+	if err := r.filterBy("1"); err == nil {
+		t.Fatal("filter on a streaming result should be refused")
+	}
+}
+
+func TestSortRebuildsFilteredView(t *testing.T) {
+	t.Parallel()
+	rs := newResultStore()
+	id := rs.add([]Column{{Name: "n", Type: "int"}}, nil, "c1", "t1", "SELECT 1")
+	r, _ := rs.get(id)
+	r.append(cells("12", "3", "21", "11"))
+	r.finish(false, "")
+
+	if err := r.filterBy("1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.sortBy(0, false); err != nil {
+		t.Fatal(err)
+	}
+	w, err := r.window(0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := column(w.Rows)
+	want := []string{"11", "12", "21"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("view must follow the sort: got %v, want %v", got, want)
+		}
+	}
+}
+
+func TestFilteredWindowBounds(t *testing.T) {
+	t.Parallel()
+	rs := newResultStore()
+	id := rs.add([]Column{{Name: "n", Type: "int"}}, nil, "c1", "t1", "SELECT 1")
+	r, _ := rs.get(id)
+	r.append(cells("1", "2", "10"))
+	r.finish(false, "")
+
+	if err := r.filterBy("1"); err != nil {
+		t.Fatal(err)
+	}
+	// Two matches; offsets validate against the view, not the buffer.
+	if _, err := r.window(3, 5); err == nil {
+		t.Fatal("offset past the filtered end should error")
+	}
+	w, err := r.window(1, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w.Rows) != 1 || *w.Rows[0][0] != "10" {
+		t.Fatalf("got %v", column(w.Rows))
+	}
+}
+
 func TestCloseCancels(t *testing.T) {
 	t.Parallel()
 	rs := newResultStore()

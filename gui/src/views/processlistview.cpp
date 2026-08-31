@@ -5,6 +5,8 @@
 #include "views/panelbase.h"
 
 #include "ui/switchbox.h"
+#include <QComboBox>
+#include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMenu>
@@ -16,7 +18,9 @@
 namespace
 {
 
-constexpr int ProcessPollMs = 2000;
+constexpr int PollChoicesSecs[] = {1, 2, 5, 10, 30};
+constexpr int DefaultPollSecs = 2;
+constexpr int MsPerSec = 1000;
 
 } // namespace
 
@@ -26,7 +30,42 @@ ProcesslistView::ProcesslistView(const QString &connID, QWidget *parent)
     m_hideSleeping = new SwitchBox(tr("Hide Sleeping"));
     m_hideSleeping->setChecked(true);
     connect(m_hideSleeping, &QCheckBox::toggled, this, [this]() { refresh(); });
+    addHeaderStretch();
     addHeaderWidget(m_hideSleeping);
+
+    m_autoRefresh = new SwitchBox(tr("Auto Refresh"));
+    m_autoRefresh->setChecked(true);
+    m_autoRefresh->setToolTip(tr("Poll the server on the chosen interval. Unchecked, the\n"
+                                 "list only updates on Refresh."));
+    connect(
+        m_autoRefresh, &QCheckBox::toggled, this,
+        [this](bool on)
+        {
+            m_interval->setEnabled(on);
+            if (on)
+            {
+                refresh();
+            }
+        }
+    );
+
+    m_interval = new QComboBox;
+    for (const int secs : PollChoicesSecs)
+    {
+        m_interval->addItem(tr("Every %1 s").arg(secs), secs * MsPerSec);
+        if (secs == DefaultPollSecs)
+        {
+            m_interval->setCurrentIndex(m_interval->count() - 1);
+        }
+    }
+    connect(
+        m_interval, &QComboBox::currentIndexChanged, this,
+        [this]() { m_timer->setInterval(m_interval->currentData().toInt()); }
+    );
+
+    auto *refreshRow = addHeaderRow();
+    refreshRow->addWidget(m_autoRefresh);
+    refreshRow->addWidget(m_interval);
 
     m_table = makeTable(
         {tr("Id"), tr("User"), tr("Host"), tr("DB"), tr("Command"), tr("Time"), tr("State"),
@@ -55,8 +94,17 @@ ProcesslistView::ProcesslistView(const QString &connID, QWidget *parent)
     setBody(m_table);
 
     m_timer = new QTimer(this);
-    m_timer->setInterval(ProcessPollMs);
-    connect(m_timer, &QTimer::timeout, this, [this]() { refresh(); });
+    m_timer->setInterval(m_interval->currentData().toInt());
+    connect(
+        m_timer, &QTimer::timeout, this,
+        [this]()
+        {
+            if (m_autoRefresh->isChecked())
+            {
+                refresh();
+            }
+        }
+    );
     m_timer->start();
     refresh();
 }

@@ -8,7 +8,9 @@
 #include <QWidget>
 
 class QLabel;
+class QLineEdit;
 class QStackedWidget;
+class QTimer;
 class ResultGrid;
 class ResultModel;
 
@@ -38,6 +40,11 @@ public:
 
     int rowCount() const { return m_rowCount; }
 
+    int totalRows() const { return m_totalRows; }
+
+    // A fuzzy row filter is active — rowCount() is the filtered count.
+    bool filtered() const { return !m_filter.isEmpty(); }
+
     QString error() const { return m_error; }
 
     bool editable() const { return m_editable; }
@@ -56,17 +63,27 @@ signals:
     void errorRaised(const QString &message);
 
 private:
+    // The Ctrl+F fuzzy row filter over this result's backend buffer.
+    void showFilterBar();
+    void hideFilterBar();
+    void requestFilter();
+
     QString m_sql;
     QString m_resultId;
     bool m_done = false;
     bool m_capped = false;
     int m_rowCount = 0;
+    int m_totalRows = 0;
     QString m_error;
     bool m_editable = false;
     QString m_insertSchema, m_insertTable;
+    QString m_filter; // last needle the backend accepted
 
     ResultModel *m_model;
     ResultGrid *m_grid;
     QLabel *m_summary;
     QStackedWidget *m_stack;
+    QWidget *m_filterBar;
+    QLineEdit *m_filterEdit;
+    QTimer *m_filterDebounce;
 };

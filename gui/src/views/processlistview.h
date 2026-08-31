@@ -4,6 +4,7 @@
 #include "views/panelbase.h"
 
 class QCheckBox;
+class QComboBox;
 class QTableWidget;
 class QTimer;
 
@@ -21,6 +22,8 @@ private:
 
     QTableWidget *m_table;
     QCheckBox *m_hideSleeping;
+    QCheckBox *m_autoRefresh;
+    QComboBox *m_interval;
     QTimer *m_timer;
     bool m_inFlight = false; // the poll skips a tick while a request is out
 };

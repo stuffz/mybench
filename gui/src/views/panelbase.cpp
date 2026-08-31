@@ -21,9 +21,12 @@ PanelBase::PanelBase(const QString &title, const QString &connID, QWidget *paren
     auto *headerWrap = new QWidget;
     headerWrap->setObjectName("PanelHeader"); // border-bottom rule in theme.cpp
     headerWrap->setAttribute(Qt::WA_StyledBackground, true);
-    m_header = new QHBoxLayout(headerWrap);
-    m_header->setContentsMargins(12, 8, 12, 8);
+    m_headerRows = new QVBoxLayout(headerWrap);
+    m_headerRows->setContentsMargins(12, 8, 12, 8);
+    m_headerRows->setSpacing(6);
+    m_header = new QHBoxLayout;
     m_header->setSpacing(8);
+    m_headerRows->addLayout(m_header);
 
     auto *lbl = weightedLabel(title, QFont::Medium);
 
@@ -66,9 +69,34 @@ void PanelBase::addHeaderWidget(QWidget *w)
     m_header->addWidget(w);
 }
 
-void PanelBase::setBody(QWidget *w)
+// Pushes whatever the subclass adds after this to the right edge of the
+// title row; setBody then skips its own end-of-row stretch.
+void PanelBase::addHeaderStretch()
 {
     m_header->addStretch();
+    m_headerStretched = true;
+}
+
+// A second toolbar row under the title row, for panels whose controls do not
+// scan well on one line — the same split the schema graph toolbar uses.
+QHBoxLayout *PanelBase::addHeaderRow()
+{
+    m_header2 = new QHBoxLayout;
+    m_header2->setSpacing(8);
+    m_headerRows->addLayout(m_header2);
+    return m_header2;
+}
+
+void PanelBase::setBody(QWidget *w)
+{
+    if (!m_headerStretched)
+    {
+        m_header->addStretch();
+    }
+    if (m_header2)
+    {
+        m_header2->addStretch();
+    }
     m_root->addWidget(w, 1);
 }
 

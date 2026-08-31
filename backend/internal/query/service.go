@@ -484,6 +484,20 @@ func (s *Service) Sort(resultID string, col int, desc bool) error {
 	return r.sortBy(col, desc)
 }
 
+// Filter rebuilds a finished result's fuzzy row filter in Go; the frontend
+// refetches windows. An empty needle clears it. Returns the new state so
+// the caller gets the filtered count without a second round-trip.
+func (s *Service) Filter(resultID, needle string) (*ResultState, error) {
+	r, err := s.store.get(resultID)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.filterBy(needle); err != nil {
+		return nil, err
+	}
+	return r.state(resultID), nil
+}
+
 // CloseResult drops a buffered result and cancels its query if running.
 func (s *Service) CloseResult(resultID string) {
 	s.store.close(resultID)

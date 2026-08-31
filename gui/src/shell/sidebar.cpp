@@ -527,6 +527,11 @@ void Sidebar::showMenu(const QPoint &pos)
         );
         menu.addSeparator();
         menu.addAction(
+            tr("Import Rows…"), this,
+            [this, schema, table]() { emit importRowsRequested(schema, table); }
+        );
+        menu.addSeparator();
+        menu.addAction(
             tr("Copy Name"), this,
             [schema, table]() { QApplication::clipboard()->setText(schema + "." + table); }
         );

@@ -902,10 +902,20 @@ void EditorTab::updateToolbar()
         return;
     }
     const int staged = int(page->model()->staged().size());
-    m_rowsLbl->setText(
-        page->capped() ? tr("capped at %L1").arg(page->rowCount())
-                       : tr("%L1 rows%2").arg(page->rowCount()).arg(page->done() ? "" : "…")
-    );
+    QString rows;
+    if (page->filtered())
+    {
+        rows = tr("%L1 of %L2 rows").arg(page->rowCount()).arg(page->totalRows());
+    }
+    else if (page->capped())
+    {
+        rows = tr("capped at %L1").arg(page->rowCount());
+    }
+    else
+    {
+        rows = tr("%L1 rows%2").arg(page->rowCount()).arg(page->done() ? "" : "…");
+    }
+    m_rowsLbl->setText(rows);
     m_exportBtn->setVisible(page->done() && page->rowCount() > 0 && page->error().isEmpty());
     m_applyBtn->setVisible(staged > 0);
     m_applyBtn->setText(staged == 1 ? tr("Apply 1 Edit") : tr("Apply %1 Edits").arg(staged));

@@ -5,6 +5,7 @@
 #include "app/theme.h"
 #include "dialogs/aboutdialog.h"
 #include "dialogs/connectionsdialog.h"
+#include "dialogs/importrowsdialog.h"
 #include "dialogs/prefsdialog.h"
 #include "dialogs/shortcutsdialog.h"
 #include "editor/editortab.h"
@@ -162,6 +163,24 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             TabRequest r;
             r.view = TabView::Graph;
             addTab(m_activeConn, r);
+        }
+    );
+    connect(
+        m_sidebar, &Sidebar::importRowsRequested, this,
+        [this](const QString &schema, const QString &table)
+        {
+            if (m_activeConn.isEmpty())
+            {
+                return;
+            }
+            ImportRowsDialog dlg(m_activeConn, schema, table, this);
+            if (dlg.exec() == QDialog::Accepted)
+            {
+                statusBar()->showMessage(
+                    tr("%L1 rows inserted into %2.%3").arg(dlg.insertedCount()).arg(schema, table),
+                    8000
+                );
+            }
         }
     );
     connect(
