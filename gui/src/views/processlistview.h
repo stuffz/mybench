@@ -18,6 +18,7 @@ protected:
     void refresh() override;
 
 private:
+    void showQuery(int row);
     void kill(qint64 threadID, bool queryOnly, const QString &who);
 
     QTableWidget *m_table;

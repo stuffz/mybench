@@ -100,14 +100,22 @@ func (s *Service) Processlist(connID string) ([]Process, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), adminTimeout)
 	defer cancel()
+	return readProcesslist(ctx, db)
+}
 
+func readProcesslist(ctx context.Context, db *sql.DB) ([]Process, error) {
+	// information_schema, not performance_schema: the latter stores INFO in a
+	// fixed 1024-byte buffer (COL_INFO_SIZE) and clips longer statements,
+	// while information_schema carries up to 64 KB. MySQL 8.0.22+ flags
+	// information_schema.PROCESSLIST deprecated, but it is still served in
+	// every current release; the performance_schema table stays as the
+	// fallback for a server that has dropped it.
 	const q = `SELECT ID, IFNULL(USER,''), IFNULL(HOST,''), IFNULL(DB,''),
 		IFNULL(COMMAND,''), IFNULL(TIME,0), IFNULL(STATE,''), IFNULL(INFO,'')
-		FROM performance_schema.processlist ORDER BY ID`
+		FROM information_schema.PROCESSLIST ORDER BY ID`
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
-		// Older servers or locked-down grants: same shape via information_schema.
-		rows, err = db.QueryContext(ctx, strings.Replace(q, "performance_schema", "information_schema", 1))
+		rows, err = db.QueryContext(ctx, strings.Replace(q, "information_schema.PROCESSLIST", "performance_schema.processlist", 1))
 		if err != nil {
 			return nil, fmt.Errorf("processlist: %w", err)
 		}

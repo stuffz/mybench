@@ -1,6 +1,7 @@
 #include "views/processlistview.h"
 
 #include "app/api.h"
+#include "dialogs/querydialog.h"
 #include "ui/tableutil.h"
 #include "views/panelbase.h"
 
@@ -21,6 +22,7 @@ namespace
 constexpr int PollChoicesSecs[] = {1, 2, 5, 10, 30};
 constexpr int DefaultPollSecs = 2;
 constexpr int MsPerSec = 1000;
+constexpr int InfoColumn = 7;
 
 } // namespace
 
@@ -84,12 +86,18 @@ ProcesslistView::ProcesslistView(const QString &connID, QWidget *parent)
             const qint64 id = m_table->item(row, 0)->data(Qt::DisplayRole).toLongLong();
             const QString who = m_table->item(row, 1)->text() + "@" + m_table->item(row, 2)->text();
             QMenu menu(this);
+            auto *show = menu.addAction(tr("Show Query"), this, [this, row]() { showQuery(row); });
+            show->setEnabled(!m_table->item(row, InfoColumn)->text().isEmpty());
+            menu.addSeparator();
             menu.addAction(tr("Kill Query"), this, [this, id, who]() { kill(id, true, who); });
             menu.addAction(
                 tr("Kill Connection"), this, [this, id, who]() { kill(id, false, who); }
             );
             menu.exec(m_table->viewport()->mapToGlobal(pos));
         }
+    );
+    connect(
+        m_table, &QTableWidget::cellDoubleClicked, this, [this](int row, int) { showQuery(row); }
     );
     setBody(m_table);
 
@@ -158,7 +166,7 @@ void ProcesslistView::refresh()
                 m_table->setItem(row, 6, new QTableWidgetItem(o.value("state").toString()));
                 auto *info = new QTableWidgetItem(o.value("info").toString());
                 info->setToolTip(o.value("info").toString());
-                m_table->setItem(row, 7, info);
+                m_table->setItem(row, InfoColumn, info);
             }
             m_table->setSortingEnabled(sorting);
             if (selId >= 0)
@@ -176,6 +184,21 @@ void ProcesslistView::refresh()
             fitColumns(m_table);
         }
     );
+}
+
+void ProcesslistView::showQuery(int row)
+{
+    const QString sql = m_table->item(row, InfoColumn)->text();
+    if (sql.isEmpty())
+    {
+        return;
+    }
+    const QString title = tr("Thread %1 (%2@%3)")
+                              .arg(
+                                  m_table->item(row, 0)->text(), m_table->item(row, 1)->text(),
+                                  m_table->item(row, 2)->text()
+                              );
+    showQueryDialog(this, title, sql);
 }
 
 void ProcesslistView::kill(qint64 threadID, bool queryOnly, const QString &who)

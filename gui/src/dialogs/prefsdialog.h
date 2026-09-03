@@ -29,9 +29,14 @@ private:
     // so the apply is deferred while a handle is being dragged.
     void updateSizeLabels();
     // Reflects a backend mcp.Status into the switch, port, endpoint and error
-    // rows (the latter three exist only while the listener is enabled).
+    // rows (port and endpoint grey out while the listener is off).
     void applyMcpStatus(const QJsonObject &status);
     void configureMcp(bool enabled, int port);
+    // Adds/removes the MCP error row. Removal, not setRowVisible: QFormLayout
+    // clips the dialog when rows are hidden (see the definition).
+    void setMcpError(bool show);
+    // Grows the window to the layout's hint, keeping user-dragged width.
+    void refit();
 
     QJsonObject m_prefs;
     class QTimer *m_applyTimer;
@@ -45,7 +50,8 @@ private:
 
     QSpinBox *m_mcpPort = nullptr;
     QLabel *m_mcpUrl = nullptr, *m_mcpError = nullptr;
+    QWidget *m_mcpEndpointWrap = nullptr;
+    bool m_mcpErrorShown = false;
     QString m_mcpToken;
-    int m_mcpPortRow = -1, m_mcpEndpointRow = -1, m_mcpErrorRow = -1;
     int m_mcpAppliedPort = -1; // last port the backend confirmed
 };

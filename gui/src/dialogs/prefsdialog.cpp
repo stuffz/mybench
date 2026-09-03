@@ -11,10 +11,12 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QJsonValue>
 #include <QLabel>
+#include <QLayoutItem>
 #include <QPixmap>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -77,7 +79,10 @@ PrefsDialog::PrefsDialog(const QJsonObject &prefs, QWidget *parent)
     : QDialog(parent), m_prefs(prefs)
 {
     setWindowTitle(tr("Preferences"));
-    setMinimumWidth(theme::scaledPx(38.0));
+    // Wider than the form's natural hint: the fields get room to breathe and
+    // the MCP URL (whose label yields, see below) stays readable. The dialog
+    // stays user-resizable; height refits in setMcpRows when rows change.
+    setMinimumWidth(theme::scaledPx(54.0));
 
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(20, 20, 20, 16);
@@ -248,10 +253,10 @@ PrefsDialog::PrefsDialog(const QJsonObject &prefs, QWidget *parent)
         m_mcp
     );
 
-    // Port, endpoint and error rows exist only while the listener runs —
-    // exactly the rows the web dialog reveals behind the switch.
+    // Port and endpoint rows are always present and grey out while the
+    // listener is off — rows are never hidden, because QFormLayout mislays
+    // hidden rows (see setMcpError). Only the error row comes and goes.
     m_mcpPort = intBox(1, 65535, 1);
-    m_mcpPortRow = form->rowCount();
     form->addRow(mutedLabel(tr("MCP Port")), m_mcpPort);
 
     auto *endpoint = new QWidget;
@@ -261,8 +266,9 @@ PrefsDialog::PrefsDialog(const QJsonObject &prefs, QWidget *parent)
         el->setSpacing(8);
         m_mcpUrl = smallLabel();
         m_mcpUrl->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        // Ignored: the URL yields to the buttons instead of widening the row.
-        m_mcpUrl->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        // Default Preferred policy: the row demands the full URL, and the
+        // refit() after each Status grows the window to fit it. Shrinking
+        // the window below that clips the URL, never the buttons.
         el->addWidget(m_mcpUrl, 1);
         auto *copyUrl = new QPushButton(tr("Copy URL"));
         connect(
@@ -305,18 +311,32 @@ PrefsDialog::PrefsDialog(const QJsonObject &prefs, QWidget *parent)
         );
         el->addWidget(regen);
     }
-    m_mcpEndpointRow = form->rowCount();
+    m_mcpEndpointWrap = endpoint;
     form->addRow(mutedLabel(tr("MCP Endpoint")), endpoint);
+    m_mcpPort->setEnabled(false);
+    m_mcpEndpointWrap->setEnabled(false);
 
     m_mcpError = new QLabel;
     m_mcpError->setWordWrap(true);
     m_mcpError->setProperty("tone", "destructive");
-    m_mcpErrorRow = form->rowCount();
-    form->addRow(QString(), m_mcpError);
+    // Parked outside the form until setMcpError() adds it; parented and
+    // hidden so it neither leaks nor flashes at 0,0 when the dialog shows.
+    m_mcpError->setParent(this);
+    m_mcpError->hide();
 
-    for (int row : {m_mcpPortRow, m_mcpEndpointRow, m_mcpErrorRow})
+    // Every row the same height: the tallest fields (combos, spin boxes) set
+    // the line, the rest (sliders, switches) pad up to it, so the form reads
+    // as even lines rather than a ragged list.
+    const int rowPx = theme::scaledPx(2.2);
+    for (int r = 0; r < form->rowCount(); ++r)
     {
-        form->setRowVisible(row, false);
+        if (QLayoutItem *it = form->itemAt(r, QFormLayout::FieldRole))
+        {
+            if (QWidget *fw = it->widget())
+            {
+                fw->setMinimumHeight(rowPx);
+            }
+        }
     }
 
     api()->call(
@@ -402,6 +422,17 @@ PrefsDialog::PrefsDialog(const QJsonObject &prefs, QWidget *parent)
     {
         connect(s, &QSpinBox::valueChanged, this, &PrefsDialog::emitPrefs);
     }
+
+    // The opening size must be measured with the polished (stylesheet) fonts,
+    // which normally land only at first show — after the dialog has already
+    // been sized. At any non-default UI font size the dialog opened short and
+    // only corrected itself on the next relayout; polishing everything now
+    // makes the first sizeHint the real one.
+    ensurePolished();
+    for (QWidget *child : findChildren<QWidget *>())
+    {
+        child->ensurePolished();
+    }
 }
 
 void PrefsDialog::applyMcpStatus(const QJsonObject &status)
@@ -424,10 +455,61 @@ void PrefsDialog::applyMcpStatus(const QJsonObject &status)
 
     const QString mcpErr = status.value("error").toString();
     m_mcpError->setText(mcpErr.isEmpty() ? QString() : tr("MCP: %1").arg(mcpErr));
-    m_form->setRowVisible(m_mcpPortRow, on);
-    m_form->setRowVisible(m_mcpEndpointRow, on);
-    m_form->setRowVisible(m_mcpErrorRow, !mcpErr.isEmpty());
-    adjustSize();
+    m_mcpPort->setEnabled(on);
+    m_mcpEndpointWrap->setEnabled(on);
+    setMcpError(!mcpErr.isEmpty());
+    // The URL text just changed the endpoint row's width demand.
+    refit();
+}
+
+// Grows the window to the layout's current hint, keeping any width the user
+// dragged; the height always follows the hint. Deferred a turn: the text or
+// row change that triggers a refit invalidates the nested layouts through
+// posted LayoutRequest events, so measuring in the same call sees the old
+// hint (observed: the URL landing grew the hint but not the window).
+void PrefsDialog::refit()
+{
+    QTimer::singleShot(
+        0, this,
+        [this]()
+        {
+            // The change that triggered this refit invalidates the nested
+            // layouts through posted LayoutRequest events, and a zero-timer
+            // can fire ahead of them — deliver them before measuring.
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+            resize(qMax(width(), sizeHint().width()), sizeHint().height());
+        }
+    );
+}
+
+// QFormLayout mislays hidden rows: setRowVisible removes a row from the size
+// hint, but the arrangement still spends its vertical spacing, so every
+// hidden row pushed the visible ones one spacing past the bottom edge and
+// the dialog opened clipped, un-clipping only on the next relayout (Qt 6.8,
+// QTBUG-6864 family). The one conditional row — the error — is therefore
+// physically removed and re-added instead of hidden; it is the form's last
+// row, so re-adding is a plain addRow.
+void PrefsDialog::setMcpError(bool show)
+{
+    if (show == m_mcpErrorShown)
+    {
+        return;
+    }
+    m_mcpErrorShown = show;
+    if (show)
+    {
+        m_form->addRow(m_mcpError); // spans both columns
+        m_mcpError->show();
+    }
+    else
+    {
+        QFormLayout::TakeRowResult row = m_form->takeRow(m_mcpError);
+        // The items are shells around the widget; the widget survives.
+        delete row.labelItem;
+        delete row.fieldItem;
+        m_mcpError->hide();
+    }
+    refit();
 }
 
 void PrefsDialog::configureMcp(bool enabled, int port)
@@ -439,7 +521,7 @@ void PrefsDialog::configureMcp(bool enabled, int port)
             if (!err.isEmpty())
             {
                 m_mcpError->setText(err);
-                m_form->setRowVisible(m_mcpErrorRow, true);
+                setMcpError(true);
                 return;
             }
             applyMcpStatus(res.toObject());
