@@ -48,7 +48,7 @@ constexpr int FlushMs = 5000;
 // Mirrors PollMs and SectionPollMs in dashboardview.cpp: the interval is what
 // tells the two timers apart from outside.
 constexpr int PollMs = 2000;
-constexpr int SectionPollMs = 15000;
+constexpr int SectionPollMs = 60000;
 
 constexpr auto DashboardPath = "/rpc/admin/Dashboard";
 
@@ -57,7 +57,22 @@ constexpr auto DashboardPath = "/rpc/admin/Dashboard";
 constexpr int ErrorRow = 1;
 
 // Wide enough that StatCard::elide() leaves the text it was handed alone.
+// MainWindow gives the sidebar 240 and clamps the content pane to 400 below
+// that (mainwindow.cpp), so this is the tightest layout a tile ever sees.
+constexpr int NarrowestContentWidth = 400;
+constexpr int ContentHeight = 800;
 constexpr int CardWidth = 640;
+constexpr int BaseFontPx = 13;
+// StatCard::elide() keeps 24px of the tile for padding.
+constexpr int CardTextPadding = 24;
+
+// Which of the palette's two alarm colours the card's value should be wearing.
+enum class Tone
+{
+    None,
+    Warning,
+    Destructive,
+};
 constexpr int CardHeight = 80;
 
 constexpr auto ValueName = "kpiValue";
@@ -341,11 +356,20 @@ private slots:
     void aCounterMissingFromEitherSampleHasNoRate();
 
     void theCardsReadOneSampleOfAWarmServer();
+    void theHitRateFitsTheCardEvenAtTheNarrowestWindow();
     void theBufferPoolHitRateOfAnIdleServerIsZero();
+    void theHeadlineIsTheWindowWhileTheSubLineIsTheLifetime();
+    void anIdleWindowShowsNoReadingRatherThanZero();
+    void theHitRateToneFollowsTheThresholds_data();
+    void theHitRateToneFollowsTheThresholds();
+    void theBufferPoolHitRateDividesByTheRequestsAlone();
+    void aPoolThatMissedEveryRequestReadsAsZero();
+    void readsWithoutRequestsDoNotDivideByZero();
     void percentagesWithNoTotalReadAsZero();
     void innodbMetricsWinOverTheStatusCounters();
     void theHeaderLineNamesTheServerAndItsUptime();
 
+    void theDashboardOpensPausedSoNothingSamplesUnasked();
     void thePollTimerSamplesWhileLiveIsChecked();
     void clearingLiveStopsTheSampling();
     void aTickIsSkippedWhileAPollIsStillInFlight();
@@ -522,9 +546,12 @@ void TestDashboardView::theCardsReadOneSampleOfAWarmServer()
     QCOMPARE(cardValue(view, Slow), QStringLiteral("5"));
     QCOMPARE(cardSub(view, Slow), QStringLiteral("0 / s · over 10 s"));
 
-    // 100 of the reads went to disk out of 9,900 read requests.
-    QCOMPARE(cardValue(view, PoolHit), QStringLiteral("99%"));
-    QCOMPARE(cardSub(view, PoolHit), QStringLiteral("128 MiB pool · 100 reads from disk"));
+    // One sample is a point, not an interval, so the headline has nothing to
+    // divide. 100 of the reads went to disk out of 9,900 read requests, and a
+    // disk read is itself a logical request, so the lifetime ratio on the sub
+    // line is 100/9,900 rather than 100/10,000.
+    QCOMPARE(cardValue(view, PoolHit), QStringLiteral("—"));
+    QCOMPARE(cardSub(view, PoolHit), QStringLiteral("128 MiB pool · 98.9899% since start"));
 
     // 25 dirty, 800 data and 170 free pages of a 1,000 page pool.
     QCOMPARE(cardValue(view, PoolDirty), QStringLiteral("2.5%"));
@@ -541,6 +568,55 @@ void TestDashboardView::theCardsReadOneSampleOfAWarmServer()
     QCOMPARE(cardSub(view, History), QStringLiteral("0 live transactions"));
 }
 
+void TestDashboardView::theHitRateFitsTheCardEvenAtTheNarrowestWindow()
+{
+    // Four decimals cost four characters over "100%". StatCard elides to its
+    // own width, so the reading has to be checked at the width the tile really
+    // gets rather than at the one cardValue() forces on it. 400 is the content
+    // pane's clamp; the grid floors the view above it, which is the tightest
+    // layout a dashboard tile ever sees.
+    theme::apply(theme::defaultApp, BaseFontPx);
+    m_backend.replyWithResult(snapshot(
+        QJsonObject{
+            {"Innodb_buffer_pool_read_requests", 12557783895289LL},
+            {"Innodb_buffer_pool_reads", 473864960}
+        },
+        serverVars()
+    ));
+    DashboardView view(QString::fromLatin1(ConnID));
+    api()->flush(FlushMs);
+    QVERIFY(setLive(view, Live::Off));
+    QVERIFY(pollOnce(
+        m_backend, view,
+        snapshot(
+            QJsonObject{
+                {"Innodb_buffer_pool_read_requests", 12557783895289LL + 1000000},
+                {"Innodb_buffer_pool_reads", 473864960 + 38}
+            },
+            serverVars()
+        )
+    ));
+
+    view.resize(NarrowestContentWidth, ContentHeight);
+    view.layout()->activate();
+
+    StatCard *card = cardFor(view, QString::fromLatin1(PoolHit));
+    QVERIFY(card);
+    const QLabel *value = card->findChild<QLabel *>(QString::fromLatin1(ValueName));
+    QVERIFY(value);
+    QCOMPARE(value->text(), QStringLiteral("99.9962%"));
+
+    // And say how much room is actually spare, so a future font bump fails here
+    // rather than silently truncating the only digits that carry the signal.
+    const int used = QFontMetrics(value->font()).horizontalAdvance(QStringLiteral("99.9962%"));
+    QVERIFY2(
+        used <= card->width() - CardTextPadding,
+        qPrintable(QStringLiteral("hit rate needs %1px, tile offers %2px")
+                       .arg(used)
+                       .arg(card->width() - CardTextPadding))
+    );
+}
+
 void TestDashboardView::theBufferPoolHitRateOfAnIdleServerIsZero()
 {
     // A server that has served no read at all divides by a total of nothing.
@@ -551,8 +627,189 @@ void TestDashboardView::theBufferPoolHitRateOfAnIdleServerIsZero()
     DashboardView view(QString::fromLatin1(ConnID));
     api()->flush(FlushMs);
 
-    QCOMPARE(cardValue(view, PoolHit), QStringLiteral("0.0%"));
-    QCOMPARE(cardSub(view, PoolHit), QStringLiteral("128 MiB pool · 0 reads from disk"));
+    QCOMPARE(cardValue(view, PoolHit), QStringLiteral("—"));
+    QCOMPARE(cardSub(view, PoolHit), QStringLiteral("128 MiB pool · 0.0000% since start"));
+}
+
+void TestDashboardView::theBufferPoolHitRateDividesByTheRequestsAlone()
+{
+    // Innodb_buffer_pool_reads counts the subset of read requests that missed,
+    // so it is already inside read_requests. MySQL prints this ratio itself as
+    // "Buffer pool hit rate 1000 / 1000" in SHOW ENGINE INNODB STATUS.
+    // Counting the misses a second time in the denominator reads 99.9000% here.
+    m_backend.replyWithResult(snapshot(
+        QJsonObject{{"Innodb_buffer_pool_read_requests", 1000}, {"Innodb_buffer_pool_reads", 1}},
+        serverVars()
+    ));
+    DashboardView view(QString::fromLatin1(ConnID));
+    api()->flush(FlushMs);
+
+    QCOMPARE(cardSub(view, PoolHit), QStringLiteral("128 MiB pool · 99.9000% since start"));
+}
+
+void TestDashboardView::aPoolThatMissedEveryRequestReadsAsZero()
+{
+    // Every request went to disk. The card has to be able to say so; summing
+    // the two counters would halve the miss ratio and report 50%.
+    m_backend.replyWithResult(snapshot(
+        QJsonObject{{"Innodb_buffer_pool_read_requests", 100}, {"Innodb_buffer_pool_reads", 100}},
+        serverVars()
+    ));
+    DashboardView view(QString::fromLatin1(ConnID));
+    api()->flush(FlushMs);
+
+    QCOMPARE(cardSub(view, PoolHit), QStringLiteral("128 MiB pool · 0.0000% since start"));
+}
+
+void TestDashboardView::readsWithoutRequestsDoNotDivideByZero()
+{
+    // Counters this shape should not occur, but the guard covers the whole
+    // denominator rather than the pair, so a lone reads value cannot produce
+    // an infinity on the card.
+    m_backend.replyWithResult(snapshot(
+        QJsonObject{{"Innodb_buffer_pool_read_requests", 0}, {"Innodb_buffer_pool_reads", 5}},
+        serverVars()
+    ));
+    DashboardView view(QString::fromLatin1(ConnID));
+    api()->flush(FlushMs);
+
+    QCOMPARE(cardSub(view, PoolHit), QStringLiteral("128 MiB pool · 0.0000% since start"));
+}
+
+void TestDashboardView::theHeadlineIsTheWindowWhileTheSubLineIsTheLifetime()
+{
+    // The whole point of the window. 12.5 trillion good requests are banked, so
+    // the lifetime ratio cannot move; every request since the last sample went
+    // to disk. The headline has to say so while the sub line keeps the history.
+    const qint64 requests = 12557783895289LL;
+    const qint64 reads = 473864960;
+    m_backend.replyWithResult(snapshot(
+        QJsonObject{
+            {"Innodb_buffer_pool_read_requests", requests}, {"Innodb_buffer_pool_reads", reads}
+        },
+        serverVars()
+    ));
+    DashboardView view(QString::fromLatin1(ConnID));
+    api()->flush(FlushMs);
+    QVERIFY(setLive(view, Live::Off));
+
+    QVERIFY(pollOnce(
+        m_backend, view,
+        snapshot(
+            QJsonObject{
+                {"Innodb_buffer_pool_read_requests", requests + 500},
+                {"Innodb_buffer_pool_reads", reads + 500}
+            },
+            serverVars()
+        )
+    ));
+
+    QCOMPARE(cardValue(view, PoolHit), QStringLiteral("0.0000%"));
+    QCOMPARE(cardSub(view, PoolHit), QStringLiteral("128 MiB pool · 99.9962% since start"));
+}
+
+void TestDashboardView::anIdleWindowShowsNoReadingRatherThanZero()
+{
+    // A server nobody is querying has served no reads to divide. That is not a
+    // pool failing at 0%; it is no reading, and the card has to distinguish
+    // them or an idle server looks like an emergency.
+    m_backend.replyWithResult(snapshot(
+        QJsonObject{{"Innodb_buffer_pool_read_requests", 9900}, {"Innodb_buffer_pool_reads", 100}},
+        serverVars()
+    ));
+    DashboardView view(QString::fromLatin1(ConnID));
+    api()->flush(FlushMs);
+    QVERIFY(setLive(view, Live::Off));
+
+    QVERIFY(pollOnce(
+        m_backend, view,
+        snapshot(
+            QJsonObject{
+                {"Innodb_buffer_pool_read_requests", 9900}, {"Innodb_buffer_pool_reads", 100}
+            },
+            serverVars()
+        )
+    ));
+
+    QCOMPARE(cardValue(view, PoolHit), QStringLiteral("—"));
+    QCOMPARE(cardSub(view, PoolHit), QStringLiteral("128 MiB pool · 98.9899% since start"));
+
+    // And no alarm colour. An idle server that looks like a failing one is the
+    // reason absence and 0% are kept apart in the first place.
+    StatCard *card = cardFor(view, QString::fromLatin1(PoolHit));
+    QVERIFY(card);
+    const QLabel *value = card->findChild<QLabel *>(QString::fromLatin1(ValueName));
+    QVERIFY(value);
+    QVERIFY(value->styleSheet().isEmpty());
+}
+
+void TestDashboardView::theHitRateToneFollowsTheThresholds_data()
+{
+    QTest::addColumn<int>("requests");
+    QTest::addColumn<int>("reads");
+    QTest::addColumn<int>("tone");
+
+    // Deltas over the window, chosen to land exactly on each boundary. The
+    // thresholds are "below", so a figure sitting on one stays in the calmer
+    // band: 99.9% is not yet worth a look, 99% is not yet an emergency.
+    QTest::newRow("healthy") << 1000000 << 1 << int(Tone::None);
+    QTest::newRow("on the warn line") << 1000 << 1 << int(Tone::None);
+    QTest::newRow("just under the warn line") << 10000 << 11 << int(Tone::Warning);
+    QTest::newRow("on the bad line") << 1000 << 10 << int(Tone::Warning);
+    QTest::newRow("just under the bad line") << 1000 << 11 << int(Tone::Destructive);
+    QTest::newRow("every request missed") << 1000 << 1000 << int(Tone::Destructive);
+}
+
+void TestDashboardView::theHitRateToneFollowsTheThresholds()
+{
+    QFETCH(int, requests);
+    QFETCH(int, reads);
+    QFETCH(int, tone);
+
+    // A long, healthy history behind a window that is whatever the row says:
+    // the tone has to follow the window, not the lifetime.
+    const qint64 baseRequests = 12557783895289LL;
+    const qint64 baseReads = 473864960;
+    m_backend.replyWithResult(snapshot(
+        QJsonObject{
+            {"Innodb_buffer_pool_read_requests", baseRequests},
+            {"Innodb_buffer_pool_reads", baseReads}
+        },
+        serverVars()
+    ));
+    DashboardView view(QString::fromLatin1(ConnID));
+    api()->flush(FlushMs);
+    QVERIFY(setLive(view, Live::Off));
+
+    QVERIFY(pollOnce(
+        m_backend, view,
+        snapshot(
+            QJsonObject{
+                {"Innodb_buffer_pool_read_requests", baseRequests + requests},
+                {"Innodb_buffer_pool_reads", baseReads + reads}
+            },
+            serverVars()
+        )
+    ));
+
+    StatCard *card = cardFor(view, QString::fromLatin1(PoolHit));
+    QVERIFY(card);
+    const QLabel *value = card->findChild<QLabel *>(QString::fromLatin1(ValueName));
+    QVERIFY(value);
+
+    const AppPalette &pal = theme::current();
+    switch (Tone(tone))
+    {
+    case Tone::None:
+        QVERIFY2(value->styleSheet().isEmpty(), qPrintable(value->text()));
+        break;
+    case Tone::Warning:
+        QVERIFY2(value->styleSheet().contains(pal.warning.name()), qPrintable(value->text()));
+        break;
+    case Tone::Destructive:
+        QVERIFY2(value->styleSheet().contains(pal.destructive.name()), qPrintable(value->text()));
+        break;
+    }
 }
 
 void TestDashboardView::percentagesWithNoTotalReadAsZero()
@@ -622,6 +879,32 @@ void TestDashboardView::theHeaderLineNamesTheServerAndItsUptime()
     QVERIFY(showsLabel(view, QStringLiteral("8.0.36 · up 1d 2h · sampled 2026-09-13 10:00:00")));
 }
 
+void TestDashboardView::theDashboardOpensPausedSoNothingSamplesUnasked()
+{
+    // Sampling is opt-in. A dashboard tab left open in the background must not
+    // keep six statements a tick running against the server it points at.
+    m_backend.replyWithResult(snapshot(QJsonObject{{"Questions", QuestionsBase}}));
+    DashboardView view(QString::fromLatin1(ConnID));
+    api()->flush(FlushMs);
+
+    QCheckBox *live = view.findChild<QCheckBox *>();
+    QVERIFY(live);
+    QVERIFY2(!live->isChecked(), "the dashboard opens paused");
+
+    // The cards are still filled in from the snapshot taken on open.
+    QCOMPARE(cardSub(view, Queries), QStringLiteral("1,000 total"));
+
+    m_backend.clearRequests();
+    for (const int ms : {PollMs, SectionPollMs})
+    {
+        QTimer *timer = timerWith(view, ms);
+        QVERIFY(timer);
+        QMetaObject::invokeMethod(timer, "timeout");
+    }
+    api()->flush(FlushMs);
+    QCOMPARE(pollsSeen(m_backend), 0);
+}
+
 void TestDashboardView::thePollTimerSamplesWhileLiveIsChecked()
 {
     m_backend.replyWithResult(snapshot(QJsonObject{{"Questions", QuestionsBase}}));
@@ -632,6 +915,7 @@ void TestDashboardView::thePollTimerSamplesWhileLiveIsChecked()
     QVERIFY2(timer, "the counters are sampled on a two second timer");
     QVERIFY(timer->isActive());
     QVERIFY2(timerWith(view, SectionPollMs), "the InnoDB sections are read far more slowly");
+    QVERIFY(setLive(view, Live::On));
 
     // Nothing ticks a timer in a test that never sits in an event loop for two
     // seconds: emit the timeout rather than wait for it.
@@ -673,6 +957,8 @@ void TestDashboardView::aTickIsSkippedWhileAPollIsStillInFlight()
     m_backend.replyWithResult(snapshot(QJsonObject{{"Questions", QuestionsBase}}));
     DashboardView view(QString::fromLatin1(ConnID));
     api()->flush(FlushMs);
+
+    QVERIFY(setLive(view, Live::On));
 
     QTimer *timer = timerWith(view, PollMs);
     QVERIFY(timer);

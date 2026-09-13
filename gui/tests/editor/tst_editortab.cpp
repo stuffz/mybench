@@ -259,6 +259,7 @@ private slots:
     void theRowLimitFollowsTheDropdownThenThePreference();
     void aFailedStatementStopsTheRestOfTheScript();
     void cancelStopsTheStatementInFlight();
+    void cancelLeavesTheTabRunnableAgain();
     void theRowCountTextNamesWhatTheResultIs();
     void aFilteredResultCountsAgainstTheTotal();
     void stagingAnEditOffersApplyAndDiscard();
@@ -495,6 +496,48 @@ void TestEditorTab::cancelStopsTheStatementInFlight()
     QCOMPARE(
         callsTo(m_backend, CancelPath).at(0).args, QJsonArray({QString::fromLatin1(ResultID)})
     );
+}
+
+void TestEditorTab::cancelLeavesTheTabRunnableAgain()
+{
+    // Cancel used to clear the queue and leave m_running standing, so Run
+    // stayed disabled and Cancel stayed on screen with no way back. Recovery
+    // depended on the next State poll, and the Cancel call's own failure is
+    // never checked, so a tab could be stranded for good.
+    EditorTab tab(
+        QString::fromLatin1(ConnID), QString::fromLatin1(TabID), QString::fromLatin1(Script)
+    );
+    tab.setConnected(true);
+    m_backend.replyWithResult(
+        runReply(resultState(QString::fromLatin1(ResultID), 10, Progress::Streaming))
+    );
+    m_backend.clearRequests();
+
+    QPushButton *run = button(tab, Button::Run);
+    QPushButton *cancel = button(tab, Button::Cancel);
+    QVERIFY(run && cancel);
+
+    run->click();
+    QVERIFY(waitUntil(
+        [&tab, this]
+        {
+            ResultPage *page = qobject_cast<ResultPage *>(resultTabs(tab)->currentWidget());
+            return !callsTo(m_backend, RunPath).isEmpty() && page && !page->resultId().isEmpty();
+        }
+    ));
+    QVERIFY(!run->isEnabled());
+    QVERIFY(cancel->isVisibleTo(&tab));
+
+    cancel->click();
+
+    QVERIFY2(run->isEnabled(), "a cancelled tab has to be runnable without waiting for a poll");
+    QVERIFY2(
+        !cancel->isVisibleTo(&tab), "nothing is in flight, so there is nothing left to cancel"
+    );
+
+    // And it says it was cancelled rather than claiming the statement ran.
+    QVERIFY2(!noteText(tab).contains(QStringLiteral("ran")), qPrintable(noteText(tab)));
+    QCOMPARE(noteText(tab), QStringLiteral("cancelled"));
 }
 
 void TestEditorTab::theRowCountTextNamesWhatTheResultIs()

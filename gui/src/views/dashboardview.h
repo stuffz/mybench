@@ -5,6 +5,7 @@
 // The backend samples (admin.Dashboard); the rate maths and the sample history
 // live here, because the history is per-open-tab — closing the tab is what
 // forgets it, and two tabs on the same server keep their own windows.
+#include "views/hitratewindow.h"
 #include "views/panelbase.h"
 
 #include <QHash>
@@ -47,6 +48,7 @@ private:
     // before the second sample, and 0 across a counter reset (a restart).
     double rate(const QString &key) const;
     double poolHitRate() const;
+    QString poolHitRateText() const;
 
     QCheckBox *m_live;
     QLabel *m_meta;
@@ -67,6 +69,11 @@ private:
 
     QJsonObject m_status, m_innodb, m_vars;
     QJsonObject m_prevStatus;
+    // The lifetime counters cannot move on this timescale; the card reads the
+    // ratio across this window instead. See hitratewindow.h.
+    HitRateWindow m_poolWindow;
+    // Last plottable hit rate, held across windows with no reads in them.
+    double m_lastPoolHit = 0;
     qint64 m_prevAt = 0;
     double m_dt = 0;
     // The polls skip a tick while their previous request is still in flight.

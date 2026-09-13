@@ -36,7 +36,7 @@ ProcesslistView::ProcesslistView(const QString &connID, QWidget *parent)
     addHeaderWidget(m_hideSleeping);
 
     m_autoRefresh = new SwitchBox(tr("Auto Refresh"));
-    m_autoRefresh->setChecked(true);
+    m_autoRefresh->setChecked(false);
     m_autoRefresh->setToolTip(tr("Poll the server on the chosen interval. Unchecked, the\n"
                                  "list only updates on Refresh."));
     connect(
@@ -64,6 +64,7 @@ ProcesslistView::ProcesslistView(const QString &connID, QWidget *parent)
         m_interval, &QComboBox::currentIndexChanged, this,
         [this]() { m_timer->setInterval(m_interval->currentData().toInt()); }
     );
+    m_interval->setEnabled(m_autoRefresh->isChecked());
 
     auto *refreshRow = addHeaderRow();
     refreshRow->addWidget(m_autoRefresh);

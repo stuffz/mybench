@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // The counters both the status strip (GlobalStatus) and the dashboard read.
@@ -182,7 +183,7 @@ func (s *Service) Dashboard(connID string) (*DashSnapshot, error) {
 	}
 	snap.Uptime = snap.Status[statusUptime]
 
-	if snap.Vars, err = selectKV(ctx, db, "SHOW GLOBAL VARIABLES", varsWanted); err != nil {
+	if snap.Vars, err = s.serverVars(ctx, db, connID); err != nil {
 		return nil, fmt.Errorf("dashboard: %w", err)
 	}
 
@@ -196,6 +197,21 @@ func (s *Service) Dashboard(connID string) (*DashSnapshot, error) {
 		snap.Notes = append(snap.Notes, "Lock waits unavailable: "+err.Error())
 	}
 	return snap, nil
+}
+
+// serverVars answers from the cache while the entry is fresh. The dashboard
+// polls every two seconds; this configuration changes on SET GLOBAL or a
+// restart, so re-reading ~600 rows at that rate buys nothing.
+func (s *Service) serverVars(ctx context.Context, db *sql.DB, connID string) (map[string]string, error) {
+	if vars, ok := s.vars.get(connID, time.Now()); ok {
+		return vars, nil
+	}
+	vars, err := selectKV(ctx, db, "SHOW GLOBAL VARIABLES", varsWanted)
+	if err != nil {
+		return nil, err
+	}
+	s.vars.put(connID, vars, time.Now())
+	return vars, nil
 }
 
 // selectKV runs a two-column name/value query and keeps only the wanted rows,

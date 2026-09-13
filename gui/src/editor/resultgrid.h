@@ -64,6 +64,10 @@ public:
 
 signals:
     void sortRequested(int column);
+    // A copy that would have invented data, and why. ResultModel::cell()
+    // answers invalid for a window that has not arrived, which every copy path
+    // renders as the literal NULL.
+    void copyRefused(const QString &reason);
 
 private slots:
     void onWindowArrived();
@@ -77,6 +81,7 @@ protected:
     void keyPressEvent(QKeyEvent *e) override;
 
 private:
+    bool selectionIsComplete();
     void autoFit();
     void applyHeaderWidths();
     QString rowAsInsert(int row) const;

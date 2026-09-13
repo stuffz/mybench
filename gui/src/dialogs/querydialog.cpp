@@ -72,11 +72,17 @@ void showQueryDialog(QWidget *parent, const QString &title, const QString &sql)
                 "sqlfmt", "Format", {body->toPlainText(), FormatTabWidth}, body,
                 [body, format, error](const QJsonValue &res, const QString &err)
                 {
+                    // Both outcomes leave the button usable and the error line
+                    // describing only this attempt. Resetting before the branch
+                    // is what stops the two paths drifting apart again: the
+                    // success path used to do neither, so Format worked exactly
+                    // once and a stale failure sat under the formatted SQL.
+                    format->setEnabled(true);
+                    error->hide();
                     if (!err.isEmpty())
                     {
                         error->setText(QObject::tr("format: %1").arg(err));
                         error->show();
-                        format->setEnabled(true);
                         return;
                     }
                     body->setPlainText(res.toString());

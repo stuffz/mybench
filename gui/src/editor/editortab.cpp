@@ -285,6 +285,11 @@ EditorTab::EditorTab(
                 api()->post("query", "Cancel", {id});
             }
             m_queue.clear();
+            // The server's acknowledgement is not waited for, and post()'s own
+            // failure is never reported, so the tab has to stand itself back up
+            // here. Leaving m_running set strands Run behind a State poll that
+            // may never come.
+            queueFinished(RunOutcome::Cancelled);
         }
     );
     connect(m_exportBtn, &QPushButton::clicked, this, &EditorTab::exportCsv);
@@ -608,7 +613,7 @@ void EditorTab::runNext()
 {
     if (m_queueIndex >= m_queue.size())
     {
-        queueFinished(false);
+        queueFinished(RunOutcome::Completed);
         return;
     }
     const QString stmt = m_queue.at(m_queueIndex);
@@ -617,6 +622,12 @@ void EditorTab::runNext()
         page, &ResultPage::sortRequested, this, [this, page](int column) { sortBy(page, column); }
     );
     connect(page, &ResultPage::errorRaised, this, &EditorTab::setError);
+    // A refused copy is not an error on the statement, so it goes to the note
+    // line rather than the error strip the result itself owns.
+    connect(
+        page, &ResultPage::copyRefused, this,
+        [this](const QString &reason) { setNote(reason, "warning"); }
+    );
     connect(
         page, &ResultPage::stagedChanged, this,
         [this, page](int)
@@ -657,7 +668,7 @@ void EditorTab::runNext()
             if (!err.isEmpty())
             {
                 setError(err);
-                queueFinished(true);
+                queueFinished(RunOutcome::StoppedOnError);
                 return;
             }
             const QJsonObject o = res.toObject();
@@ -678,7 +689,7 @@ void EditorTab::runNext()
     );
 }
 
-void EditorTab::queueFinished(bool stoppedOnError)
+void EditorTab::queueFinished(RunOutcome outcome)
 {
     m_poll->stop();
     // Editability probes hit the same session, so they wait until no statement
@@ -694,13 +705,17 @@ void EditorTab::queueFinished(bool stoppedOnError)
     m_runBtn->setEnabled(m_connected);
     m_runStmtBtn->setEnabled(m_connected);
     m_cancelBtn->setVisible(false);
-    if (!stoppedOnError && m_queueTotal > 0)
+    if (outcome == RunOutcome::Cancelled)
+    {
+        setNote(tr("cancelled"), "warning");
+    }
+    else if (outcome == RunOutcome::Completed && m_queueTotal > 0)
     {
         setNote(
             m_queueTotal == 1 ? tr("ran 1 statement") : tr("ran %1 statements").arg(m_queueTotal)
         );
     }
-    else if (stoppedOnError && m_queueTotal > 1)
+    else if (outcome == RunOutcome::StoppedOnError && m_queueTotal > 1)
     {
         // Stopping is the safe default: later statements in a script usually
         // assume the earlier ones succeeded. A single statement needs no such
@@ -781,7 +796,7 @@ void EditorTab::pollState()
                 // A dead poll must not leave the tab stuck "running" forever —
                 // that silently blocks every future run.
                 setError(tr("lost result: %1").arg(err));
-                queueFinished(true);
+                queueFinished(RunOutcome::StoppedOnError);
                 return;
             }
             page->applyState(res.toObject());
@@ -794,7 +809,7 @@ void EditorTab::pollState()
             {
                 // The result tab already shows the error in its summary —
                 // repeating it in the strip under the buttons said it twice.
-                queueFinished(true);
+                queueFinished(RunOutcome::StoppedOnError);
                 return;
             }
             emit statusMessage(tr("%L1 rows").arg(page->rowCount()));

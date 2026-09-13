@@ -4,7 +4,8 @@ package admin
 
 // Service: the panel queries (SPEC.md — these are the easy 5% of
 // Workbench). Everything runs on the connection's shared pool, not on tab
-// sessions, and every method is a plain query — no state here.
+// sessions. The only state is varsCache, which keeps the server configuration
+// between dashboard polls; every method is otherwise a plain query.
 
 import (
 	"context"
@@ -23,6 +24,7 @@ const adminTimeout = 10 * time.Second
 // Service exposes the admin-panel and schema queries to the frontend.
 type Service struct {
 	conns *conn.Service
+	vars  varsCache
 }
 
 // New builds the admin service over the connection registry.

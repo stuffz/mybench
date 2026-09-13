@@ -290,6 +290,7 @@ private slots:
 
     void theMcpStatusFillsTheRowsAndLeavesThemDead();
     void theMcpSwitchConfiguresTheListener();
+    void aFailedConfigureDoesNotLeaveTheSwitchLying();
     void aPortChangeAppliesOnlyWhenItChanged();
     void aStatusErrorIsShownWithItsPrefix();
     void aConfigureFailureShowsTheRawError();
@@ -797,6 +798,35 @@ void TestPrefsDialog::theMcpStatusFillsTheRowsAndLeavesThemDead()
     QTest::qWait(50);
     QVERIFY(callsTo(m_backend, ConfigurePath).isEmpty());
     QVERIFY(errorLabel(dlg)->isHidden());
+}
+
+void TestPrefsDialog::aFailedConfigureDoesNotLeaveTheSwitchLying()
+{
+    // The switch is where the user put it, not where the listener is. When
+    // Configure fails nothing started, so leaving it reading "on" tells the
+    // user the endpoint is up when it never came up.
+    PrefsDialog dlg({});
+    QSpinBox *port = spin(dlg, QStringLiteral("MCP Port"));
+    QVERIFY(port);
+    QVERIFY(waitUntil([port] { return port->value() == McpPort; }));
+
+    QCheckBox *mcp = toggle(dlg, QStringLiteral("MCP Server"));
+    QVERIFY(mcp);
+    QVERIFY(!mcp->isChecked());
+
+    m_backend.replyWithError(QStringLiteral("listen tcp 127.0.0.1:7337: address already in use"));
+    m_backend.clearRequests();
+    mcp->setChecked(true);
+    QVERIFY(waitUntil([this] { return callsTo(m_backend, ConfigurePath).size() == 1; }));
+
+    // The dialog has to go back to the server for the truth rather than trust
+    // the switch it just moved.
+    m_backend.replyWithResult(mcpStatus(false, McpPort));
+    QVERIFY(waitUntil([this] { return callsTo(m_backend, StatusPath).size() >= 1; }));
+    QVERIFY2(
+        waitUntil([mcp] { return !mcp->isChecked(); }),
+        "the switch still claims a listener that never started"
+    );
 }
 
 void TestPrefsDialog::theMcpSwitchConfiguresTheListener()

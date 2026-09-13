@@ -31,6 +31,8 @@ constexpr auto Conn = "c1";
 constexpr auto OtherConn = "c2";
 constexpr auto Label = "Prod";
 constexpr auto OtherLabel = "Dev";
+constexpr auto Inserted = "7 rows inserted into app.users";
+constexpr int MessageMs = 8000;
 constexpr auto Boom = "dial tcp 127.0.0.1:3306: connection refused";
 
 constexpr auto Version = "8.0.36-log";
@@ -112,7 +114,9 @@ QLabel *healthDot(const StatusStrip &strip)
 // one sits inside an item.
 QLabel *errorLine(const StatusStrip &strip)
 {
-    return strip.findChild<QLabel *>(QString(), Qt::FindDirectChildrenOnly);
+    // By name, not by position: an unnamed lookup takes the first direct-child
+    // label, which silently follows whatever order the constructor builds in.
+    return strip.findChild<QLabel *>(QStringLiteral("statusError"));
 }
 
 // The number out of "<n> qps". A derived rate is bounded rather than matched,
@@ -153,6 +157,10 @@ private slots:
     void watchingAnotherServerDropsTheOldValues();
     void aReplyForAConnectionThatIsGoneIsIgnored();
     void noConnectionHidesTheStripAndStopsPolling();
+
+    void aMessageIsVisibleAndClearsItself();
+    void aMessageDoesNotWearTheErrorColour();
+    void watchingAnotherServerDropsTheOldHealthColour();
 
 private:
     void watchAndWait();
@@ -481,6 +489,64 @@ void TestStatusStrip::poll()
 {
     QVERIFY(QMetaObject::invokeMethod(m_timer, "timeout"));
     api()->flush(FlushMs);
+}
+
+void TestStatusStrip::aMessageIsVisibleAndClearsItself()
+{
+    // The window's QStatusBar is hidden for the life of the app, so anything
+    // written there is never seen. Confirmations land here instead, and "here"
+    // has to be a label that is actually shown.
+    watchAndWait();
+
+    QLabel *message = m_strip->findChild<QLabel *>(QStringLiteral("statusMessage"));
+    QVERIFY(message);
+    QVERIFY2(!message->isVisibleTo(m_strip), "an empty message must not hold space");
+
+    m_strip->showMessage(QString::fromLatin1(Inserted), MessageMs);
+    QCOMPARE(message->text(), QString::fromLatin1(Inserted));
+    QVERIFY(message->isVisibleTo(m_strip));
+
+    QTimer *clear = m_strip->findChild<QTimer *>(QStringLiteral("statusMessageTimer"));
+    QVERIFY2(clear, "the message has to clear itself or it becomes furniture");
+    QCOMPARE(clear->interval(), MessageMs);
+    QMetaObject::invokeMethod(clear, "timeout");
+
+    QVERIFY(message->text().isEmpty());
+    QVERIFY(!message->isVisibleTo(m_strip));
+}
+
+void TestStatusStrip::aMessageDoesNotWearTheErrorColour()
+{
+    // The error line is styled destructive. A row-count confirmation sharing
+    // that label would read as a failure.
+    watchAndWait();
+    m_strip->showMessage(QString::fromLatin1(Inserted), MessageMs);
+
+    const QLabel *message = m_strip->findChild<QLabel *>(QStringLiteral("statusMessage"));
+    QVERIFY(message);
+    QVERIFY(message != m_error);
+    QVERIFY(message->property("tone").toString() != QStringLiteral("destructive"));
+}
+
+void TestStatusStrip::watchingAnotherServerDropsTheOldHealthColour()
+{
+    // Pointing the footer at a different server must not leave the previous
+    // one's colour and message standing. Green for a server never contacted is
+    // worse than no reading at all.
+    watchAndWait();
+    QVERIFY(!healthDot(*m_strip)->styleSheet().isEmpty());
+    m_strip->showMessage(QString::fromLatin1(Inserted), MessageMs);
+
+    m_backend.clearRequests();
+    m_strip->watch(QString::fromLatin1(OtherConn), QString::fromLatin1(OtherLabel));
+
+    QVERIFY2(
+        healthDot(*m_strip)->styleSheet().isEmpty(),
+        "the dot still wears the colour of the server we just left"
+    );
+    const QLabel *message = m_strip->findChild<QLabel *>(QStringLiteral("statusMessage"));
+    QVERIFY(message);
+    QVERIFY2(message->text().isEmpty(), "the old server's confirmation followed us across");
 }
 
 QTEST_MAIN(TestStatusStrip)

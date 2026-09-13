@@ -22,6 +22,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <optional>
 
 namespace
 {
@@ -32,8 +33,25 @@ constexpr int PollMs = 2000;
 // SHOW ENGINE INNODB STATUS is only read for the sections with no structured
 // equivalent (deadlock, FK error, semaphores). Those change rarely, and the
 // statement resets the monitor's own averaging window, so it is polled far
-// more slowly than the counters.
-constexpr int SectionPollMs = 15000;
+// more slowly than the counters. It is also the largest reply the panel asks
+// for — ~40 KB on a busy 8.4 server, of which three sections are used — which
+// matters on a tunnelled connection.
+constexpr int SectionPollMs = 60000;
+// A healthy pool sits at four nines, and one a hundred times worse still
+// rounds to 100%. The whole signal is in the tail.
+constexpr int HitRateDecimals = 4;
+// Long enough that one unlucky miss on a quiet server does not swing the
+// reading by whole percent, short enough to still be about now.
+constexpr qint64 HitRateWindowMs = 60000;
+constexpr int MsPerSec = 1000;
+// Where the card starts warning, matching the tooltip's own wording. A healthy
+// pool sits at four nines, so 95% is not an early warning, it is a post-mortem:
+// against a server at 99.9962% it is over a thousand times the misses.
+constexpr double PoolHitWarnPct = 99.9;
+constexpr double PoolHitBadPct = 99.0;
+// Shown when there is no read activity to divide. Not 0%, which would read as
+// a pool that is failing rather than one that is not being asked for anything.
+constexpr auto NoReading = "—";
 
 constexpr int CardColumns = 4;
 constexpr int ChartColumns = 2;
@@ -45,6 +63,26 @@ const char *const kForeignKeySection = "LATEST FOREIGN KEY ERROR";
 const char *const kSemaphoreSection = "SEMAPHORES";
 
 // Section headings inside the scrolling page.
+// Amber where the tooltip says "worth a look", red where it says the pool is
+// too small for the working set. No reading at all leaves the card untoned:
+// an idle server is not a failing one.
+QColor poolHitTone(const std::optional<double> &rate, const AppPalette &pal)
+{
+    if (!rate)
+    {
+        return {};
+    }
+    if (*rate < PoolHitBadPct)
+    {
+        return pal.destructive;
+    }
+    if (*rate < PoolHitWarnPct)
+    {
+        return pal.warning;
+    }
+    return {};
+}
+
 QLabel *sectionLabel(const QString &text)
 {
     QLabel *l = weightedLabel(text, QFont::DemiBold);
@@ -68,11 +106,11 @@ QPlainTextEdit *textBox(int height)
 } // namespace
 
 DashboardView::DashboardView(const QString &connID, QWidget *parent)
-    : PanelBase(tr("Server Dashboard"), connID, parent)
+    : PanelBase(tr("Server Dashboard"), connID, parent), m_poolWindow(HitRateWindowMs)
 {
     // --- header: the sampling switch and the server line ------------------
     m_live = new SwitchBox(tr("Live"));
-    m_live->setChecked(true);
+    m_live->setChecked(false);
     m_live->setToolTip(tr("Keep sampling every %1 s. Unchecked freezes the graphs; the\n"
                           "history already collected is kept.")
                            .arg(PollMs / 1000));
@@ -235,7 +273,14 @@ void DashboardView::buildCards(QGridLayout *grid)
     m_cards["poolhit"]->setToolTip(
         tr("Reads served from the buffer pool rather than from disk:\n"
            "1 − Innodb_buffer_pool_reads / Innodb_buffer_pool_read_requests.\n"
-           "Anything under ~99% on a warm server means the pool is too small.")
+           "The headline covers the last %1 s; the line under it is the same\n"
+           "ratio since the server started, which on a long-lived server barely\n"
+           "moves. A warm server sits at four nines or better, so the digits\n"
+           "after the decimal point are the signal: 99.99% is healthy, 99.9% is\n"
+           "worth a look, under 99% the pool is too small for the working set.\n"
+           "%2 means nothing was read in the window, not a pool that is failing.")
+            .arg(HitRateWindowMs / MsPerSec)
+            .arg(QString::fromUtf8(NoReading))
     );
     m_cards["history"]->setToolTip(
         tr("InnoDB's undo history length (trx_rseg_history_len). It grows while a\n"
@@ -353,15 +398,26 @@ double DashboardView::rate(const QString &key) const
     return delta < 0 ? 0 : delta / m_dt;
 }
 
+// The card's headline: the last minute, or nothing when the window holds no
+// reads to divide. poolHitRate() below is the lifetime figure behind it.
+QString DashboardView::poolHitRateText() const
+{
+    const std::optional<double> live = m_poolWindow.ratio();
+    return live ? fmtPercent(*live, HitRateDecimals) : QString::fromUtf8(NoReading);
+}
+
 double DashboardView::poolHitRate() const
 {
     const double requests = double(st("Innodb_buffer_pool_read_requests"));
     const double reads = double(st("Innodb_buffer_pool_reads"));
-    if (requests + reads <= 0)
+    if (requests <= 0)
     {
         return 0;
     }
-    return 100.0 * (1.0 - reads / (requests + reads));
+    // A read that misses is served through the logical-request path, so reads
+    // is a subset of read_requests rather than a separate population. This is
+    // the ratio the server prints itself as "Buffer pool hit rate 1000 / 1000".
+    return 100.0 * (1.0 - reads / requests);
 }
 
 void DashboardView::refresh()
@@ -457,6 +513,10 @@ void DashboardView::applySnapshot(const QJsonObject &snap)
     m_innodb = snap.value("innodb").toObject();
     m_vars = snap.value("vars").toObject();
 
+    m_poolWindow.push(
+        now, double(st("Innodb_buffer_pool_read_requests")), double(st("Innodb_buffer_pool_reads"))
+    );
+
     const AppPalette &pal = theme::current();
     m_meta->setText(tr("%1 · up %2 · sampled %3")
                         .arg(
@@ -495,16 +555,16 @@ void DashboardView::applySnapshot(const QJsonObject &snap)
     );
     m_cards["slow"]->setTone(rate("Slow_queries") > 1 ? pal.warning : QColor());
 
-    const double hit = poolHitRate();
     m_cards["poolhit"]->setValue(
-        fmtPercent(hit),
-        tr("%1 pool · %2 reads from disk")
+        poolHitRateText(),
+        tr("%1 pool · %2 since start")
             .arg(
                 fmtBytes(m_vars.value("innodb_buffer_pool_size").toString().toLongLong()),
-                fmtCount(st("Innodb_buffer_pool_reads"))
+                fmtPercent(poolHitRate(), HitRateDecimals)
             )
     );
-    m_cards["poolhit"]->setTone(hit > 0 && hit < 95 ? pal.warning : QColor());
+    const std::optional<double> livePoolHit = m_poolWindow.ratio();
+    m_cards["poolhit"]->setTone(poolHitTone(livePoolHit, pal));
 
     const double poolTotal = double(st("Innodb_buffer_pool_pages_total"));
     const double dirty = percentOf(double(st("Innodb_buffer_pool_pages_dirty")), poolTotal);
@@ -579,7 +639,11 @@ void DashboardView::applySnapshot(const QJsonObject &snap)
             {rate("Innodb_rows_read"), rate("Innodb_rows_inserted"), rate("Innodb_rows_updated"),
              rate("Innodb_rows_deleted")}
         );
-        m_charts["pool"]->push({hit, dirty});
+        // An idle window has no ratio to plot. Holding the last reading says
+        // "nothing changed"; pushing 0 would draw a collapse that never
+        // happened, and the chart has no way to express a gap.
+        m_lastPoolHit = livePoolHit.value_or(m_lastPoolHit);
+        m_charts["pool"]->push({m_lastPoolHit, dirty});
         m_charts["io"]->push({dataReads, dataWrites, rate("Innodb_data_fsyncs")});
         m_charts["net"]->push({rate("Bytes_received"), rate("Bytes_sent")});
         m_charts["locks"]->push(
@@ -612,7 +676,7 @@ void DashboardView::fillEngine()
                  fmtCount(st("Innodb_buffer_pool_pages_free")),
                  fmtCount(st("Innodb_buffer_pool_pages_dirty"))
              )},
-        {tr("Pool hit rate"), fmtPercent(poolHitRate())},
+        {tr("Pool hit rate (since start)"), fmtPercent(poolHitRate(), HitRateDecimals)},
         {tr("Read requests / disk reads"), QStringLiteral("%1 / %2").arg(
                                                fmtCount(st("Innodb_buffer_pool_read_requests")),
                                                fmtCount(st("Innodb_buffer_pool_reads"))

@@ -7,6 +7,15 @@
 #include <algorithm>
 #include <cmath>
 
+namespace
+{
+
+// Under ten a single decimal still carries information; above it the integer
+// reads cleaner. Callers that need the tail ask for decimals explicitly.
+constexpr double PercentOneDecimalBelow = 10.0;
+
+} // namespace
+
 QString fmtCount(qint64 n)
 {
     return QLocale().toString(n);
@@ -42,7 +51,12 @@ QString fmtCompact(double v)
 
 QString fmtPercent(double v)
 {
-    return QLocale().toString(v, 'f', v < 10 ? 1 : 0) + "%";
+    return fmtPercent(v, v < PercentOneDecimalBelow ? 1 : 0);
+}
+
+QString fmtPercent(double v, int decimals)
+{
+    return QLocale().toString(v, 'f', decimals) + "%";
 }
 
 double percentOf(double part, double whole)

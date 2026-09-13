@@ -114,6 +114,19 @@ bool loadGrid(
     return waitForWindow(model, int(rows.size()) - 1);
 }
 
+// A result taller than the window the stub answers with: rows past the first
+// three exist in the model but their data has not arrived.
+bool loadGridWithTail(ResultGrid &grid, ResultModel &model, StubBackend &backend, int totalRows)
+{
+    api()->setEndpoint(backend.base(), QString());
+    backend.replyWithResult(rowsPayload({{1, QStringLiteral("one")}}));
+    grid.resize(GridWidth, GridHeight);
+    grid.setResultModel(&model);
+    model.setResult(QStringLiteral("r1"), testColumns(), totalRows);
+    model.data(model.index(0, 0), Qt::DisplayRole);
+    return waitForWindow(model, 0);
+}
+
 void selectCells(ResultGrid &grid, const QList<QModelIndex> &cells)
 {
     grid.selectionModel()->clearSelection();
@@ -152,6 +165,8 @@ private slots:
     void aHoleInTheSelectionCopiesAsEmpty();
     void copyWithHeadersNamesTheSelectedColumns();
     void theCopySeparatorIsProcessWide();
+    void copyingOverAnUnloadedWindowIsRefused();
+    void copyingAsInsertOverAnUnloadedWindowIsRefused();
     void copyCellWithHeaderTakesOneColumn();
     void copyRowTakesEveryColumnOfTheRow();
     void copyRowAsJsonMarksNullAsJsonNull();
@@ -477,6 +492,50 @@ void TestResultGrid::copyWithHeadersNamesTheSelectedColumns()
         copyViaMenu(grid, model.index(0, 0), QStringLiteral("Copy Selection with Headers")),
         QStringLiteral("id\tnote\n1\tNULL\n2\tx")
     );
+}
+
+void TestResultGrid::copyingOverAnUnloadedWindowIsRefused()
+{
+    // ResultModel::cell() answers invalid for a window that has not arrived and
+    // every copy path renders invalid as the literal NULL. Copying a selection
+    // that spans one would put rows of fabricated NULLs on the clipboard.
+    StubBackend backend;
+    QVERIFY(backend.listening());
+    ResultGrid grid;
+    ResultModel model;
+    const int total = 200;
+    QVERIFY(loadGridWithTail(grid, model, backend, total));
+
+    const int unloaded = total - 1;
+    QVERIFY2(!model.rowLoaded(unloaded), "the tail of this result must still be missing");
+
+    QSignalSpy refused(&grid, &ResultGrid::copyRefused);
+    selectCells(grid, {model.index(0, 0), model.index(unloaded, 0)});
+
+    QCOMPARE(copyWithCtrlC(grid), QString());
+    QCOMPARE(refused.count(), 1);
+    QVERIFY(!refused.at(0).at(0).toString().isEmpty());
+}
+
+void TestResultGrid::copyingAsInsertOverAnUnloadedWindowIsRefused()
+{
+    // The same hole, but this one generates SQL that would be run elsewhere.
+    StubBackend backend;
+    QVERIFY(backend.listening());
+    ResultGrid grid;
+    ResultModel model;
+    const int total = 200;
+    QVERIFY(loadGridWithTail(grid, model, backend, total));
+    grid.setInsertTarget(QStringLiteral("app"), QStringLiteral("users"));
+
+    const int unloaded = total - 1;
+    QSignalSpy refused(&grid, &ResultGrid::copyRefused);
+    selectCells(grid, {model.index(0, 0), model.index(unloaded, 0)});
+
+    QCOMPARE(
+        copyViaMenu(grid, model.index(0, 0), QStringLiteral("Copy Selection as INSERT")), QString()
+    );
+    QCOMPARE(refused.count(), 1);
 }
 
 void TestResultGrid::theCopySeparatorIsProcessWide()

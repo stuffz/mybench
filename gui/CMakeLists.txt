@@ -54,6 +54,7 @@ qt_add_executable(mybench
     src/views/innodbview.cpp
     src/views/historyview.cpp
     src/views/dashboardview.cpp
+    src/views/hitratewindow.cpp
     src/views/statcard.cpp
     src/views/inspectorview.cpp
     src/views/graphcanvas.cpp

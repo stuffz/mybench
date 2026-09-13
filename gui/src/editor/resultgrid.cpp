@@ -272,6 +272,10 @@ void ResultGrid::keyPressEvent(QKeyEvent *e)
     if (e->matches(QKeySequence::Copy) && m_model && selectionModel() &&
         !selectionModel()->selectedIndexes().isEmpty())
     {
+        if (!selectionIsComplete())
+        {
+            return;
+        }
         QApplication::clipboard()->setText(selectionAsText(false));
         return;
     }
@@ -312,6 +316,26 @@ SelShape shapeOf(const QModelIndexList &sel)
 
 // The selection as separator-joined lines; Ctrl-click holes stay empty. The
 // optional header row carries only the selected columns' names.
+// Guards every selection-wide copy. The context menu already checks the row it
+// was opened on, but a selection can reach well past it, and Ctrl+C never goes
+// near the menu at all.
+bool ResultGrid::selectionIsComplete()
+{
+    const QModelIndexList sel = selectionModel()->selectedIndexes();
+    for (const QModelIndex &ix : sel)
+    {
+        if (!m_model->rowLoaded(ix.row()))
+        {
+            emit copyRefused(
+                tr("Some of the selected rows have not loaded yet. Scroll through them and copy "
+                   "again.")
+            );
+            return false;
+        }
+    }
+    return true;
+}
+
 QString ResultGrid::selectionAsText(bool withHeader) const
 {
     const SelShape shape = shapeOf(selectionModel()->selectedIndexes());
@@ -566,17 +590,35 @@ void ResultGrid::showContextMenu(const QPoint &pos)
     {
         menu.addAction(
             tr("Copy Selection (%1 Cells)").arg(selCount), this,
-            [this, clip]() { clip->setText(selectionAsText(false)); }
+            [this, clip]()
+            {
+                if (selectionIsComplete())
+                {
+                    clip->setText(selectionAsText(false));
+                }
+            }
         );
         menu.addAction(
             tr("Copy Selection with Headers"), this,
-            [this, clip]() { clip->setText(selectionAsText(true)); }
+            [this, clip]()
+            {
+                if (selectionIsComplete())
+                {
+                    clip->setText(selectionAsText(true));
+                }
+            }
         );
         if (!m_insertTable.isEmpty())
         {
             menu.addAction(
                 tr("Copy Selection as INSERT"), this,
-                [this, clip]() { clip->setText(selectionAsInsert()); }
+                [this, clip]()
+                {
+                    if (selectionIsComplete())
+                    {
+                        clip->setText(selectionAsInsert());
+                    }
+                }
             );
         }
         menu.exec(viewport()->mapToGlobal(pos));

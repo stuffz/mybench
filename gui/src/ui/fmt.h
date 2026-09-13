@@ -11,6 +11,10 @@ QString fmtCompact(double v);
 
 QString fmtPercent(double v);
 
+// A fixed number of decimals, for a figure whose interesting range is the tail:
+// a buffer pool hit rate 100x worse than a healthy one still rounds to 100%.
+QString fmtPercent(double v, int decimals);
+
 // Clamped to 0–100, and 0 when whole is not positive: a missing denominator
 // should read as nothing rather than as a spike.
 double percentOf(double part, double whole);

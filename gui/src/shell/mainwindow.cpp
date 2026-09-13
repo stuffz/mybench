@@ -54,6 +54,8 @@ namespace
 {
 
 constexpr int SaveCoalesceMs = 50;
+// How long a footer confirmation or sidebar error stays up.
+constexpr int MessageMs = 8000;
 // Header height as a multiple of the base font size (39px at the default
 // 13px), not a flat px value: a fixed height crowded the controls on scaled
 // monitors, where everything inside the header grows but the bar would not.
@@ -176,16 +178,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             ImportRowsDialog dlg(m_activeConn, schema, table, this);
             if (dlg.exec() == QDialog::Accepted)
             {
-                statusBar()->showMessage(
+                m_status->showMessage(
                     tr("%L1 rows inserted into %2.%3").arg(dlg.insertedCount()).arg(schema, table),
-                    8000
+                    MessageMs
                 );
             }
         }
     );
     connect(
         m_sidebar, &Sidebar::errorRaised, this,
-        [this](const QString &msg) { statusBar()->showMessage(msg, 8000); }
+        [this](const QString &msg) { m_status->showMessage(msg, MessageMs); }
     );
 
     m_emptyState = new QWidget;

@@ -339,16 +339,7 @@ PrefsDialog::PrefsDialog(const QJsonObject &prefs, QWidget *parent)
         }
     }
 
-    api()->call(
-        "mcp", "Status", {}, this,
-        [this](const QJsonValue &res, const QString &err)
-        {
-            if (err.isEmpty())
-            {
-                applyMcpStatus(res.toObject());
-            }
-        }
-    );
+    refreshMcpStatus();
     connect(
         m_mcp, &QCheckBox::toggled, this, [this](bool on) { configureMcp(on, m_mcpPort->value()); }
     );
@@ -512,6 +503,20 @@ void PrefsDialog::setMcpError(bool show)
     refit();
 }
 
+void PrefsDialog::refreshMcpStatus()
+{
+    api()->call(
+        "mcp", "Status", {}, this,
+        [this](const QJsonValue &res, const QString &err)
+        {
+            if (err.isEmpty())
+            {
+                applyMcpStatus(res.toObject());
+            }
+        }
+    );
+}
+
 void PrefsDialog::configureMcp(bool enabled, int port)
 {
     api()->call(
@@ -522,6 +527,9 @@ void PrefsDialog::configureMcp(bool enabled, int port)
             {
                 m_mcpError->setText(err);
                 setMcpError(true);
+                // Nothing started, so the switch is showing the user's intent
+                // rather than the listener. Ask what is actually running.
+                refreshMcpStatus();
                 return;
             }
             applyMcpStatus(res.toObject());

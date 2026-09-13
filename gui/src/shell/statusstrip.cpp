@@ -70,7 +70,11 @@ StatusStrip::StatusStrip(QWidget *parent) : QWidget(parent)
     m_uptime = smallLabel();
     m_threads = smallLabel();
     m_qps = smallLabel();
+    m_message = smallLabel();
+    m_message->setObjectName("statusMessage");
+    m_message->hide();
     m_error = smallLabel();
+    m_error->setObjectName("statusError");
     m_error->setProperty("tone", "destructive");
     m_error->setStyleSheet(QString("QLabel { color: %1; }").arg(pal.destructive.name()));
 
@@ -85,12 +89,32 @@ StatusStrip::StatusStrip(QWidget *parent) : QWidget(parent)
     row->addWidget(metricItem("clock", m_uptime, tr("Uptime")));
     row->addWidget(metricItem("cpu", m_threads, tr("Threads Running / Connected")));
     row->addWidget(metricItem("activity", m_qps, tr("Queries per Second")));
+    row->addWidget(m_message);
     row->addWidget(m_error, 1);
     row->addStretch();
 
     m_timer = new QTimer(this);
     m_timer->setInterval(StatusPollMs);
     connect(m_timer, &QTimer::timeout, this, &StatusStrip::tick);
+
+    m_messageTimer = new QTimer(this);
+    m_messageTimer->setObjectName("statusMessageTimer");
+    m_messageTimer->setSingleShot(true);
+    connect(
+        m_messageTimer, &QTimer::timeout, this,
+        [this]()
+        {
+            m_message->clear();
+            m_message->hide();
+        }
+    );
+}
+
+void StatusStrip::showMessage(const QString &text, int ms)
+{
+    m_message->setText(text);
+    m_message->setVisible(!text.isEmpty());
+    m_messageTimer->start(ms);
 }
 
 void StatusStrip::applyTheme()
@@ -115,10 +139,16 @@ void StatusStrip::watch(const QString &connID, const QString &label)
     m_label = label;
     m_prevQuestions = -1;
     m_prevAt = 0;
-    for (QLabel *l : {m_version, m_uptime, m_threads, m_qps, m_error, m_latency})
+    for (QLabel *l : {m_version, m_uptime, m_threads, m_qps, m_error, m_latency, m_message})
     {
         l->clear();
     }
+    // The dot keeps its colour in a stylesheet rather than its text, so
+    // clearing the labels leaves the last server's health showing until the
+    // first reply lands. A stale green is worse than no colour.
+    m_dot->setStyleSheet(QString());
+    m_message->hide();
+    m_messageTimer->stop();
     setGroupToolTip(m_health, label);
     if (connID.isEmpty())
     {

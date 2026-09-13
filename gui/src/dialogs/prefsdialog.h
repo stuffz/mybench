@@ -31,6 +31,7 @@ private:
     // Reflects a backend mcp.Status into the switch, port, endpoint and error
     // rows (port and endpoint grey out while the listener is off).
     void applyMcpStatus(const QJsonObject &status);
+    void refreshMcpStatus();
     void configureMcp(bool enabled, int port);
     // Adds/removes the MCP error row. Removal, not setRowVisible: QFormLayout
     // clips the dialog when rows are hidden (see the definition).

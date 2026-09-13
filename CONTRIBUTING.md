@@ -46,6 +46,26 @@ task gui:build:windows  # must link bin/mybench.exe
 
 Format before lint; lint before calling anything finished. `gui:lint` builds a dedicated tree on container-local disk first — on a Windows checkout the bind mount can't take CMake's configure step, so don't "simplify" that away.
 
+## Tests
+
+`gui/tests/` mirrors `gui/src/` one directory deep. One executable and one CTest case per file, named `<layer>/<name>`, so `ctest -R editor` runs a layer and a crash takes down only that unit's process.
+
+Each target links the unit under test plus its real dependency closure, spelled out in `gui/tests/CMakeLists.txt`. That list is not boilerplate: `tst_workspace` links 13 sources because `workspace.cpp` reaches into `EditorTab` through a `qobject_cast`. A new entry appearing there is a dependency you just added, and worth a second look.
+
+`MYBENCH_BUILD_TESTS` is OFF by default, so the deb/arch/windows/macOS packaging builds configure exactly what they did before. `task gui:test` turns it on and compiles with `_GLIBCXX_ASSERTIONS`, which is what turns a `std::clamp` with crossed bounds from a formality into an abort. `task gui:coverage` reports per-file line coverage of `src/`.
+
+`gui/tests/app/stubbackend.h` answers `/rpc` over loopback with just enough HTTP for `QNetworkAccessManager`. It is what lets the RPC client, the result model, the panels and the dialogs be driven with no backend process and no database. The seam is `Api::setEndpoint`; no production code exists to support the tests.
+
+Rules that cost something to learn:
+
+- Mutation-check every new suite: revert the behaviour in a scratch copy and confirm the test fails. A suite that passes either way is measuring nothing, and two of ours did.
+- Never write a test that passes against a known bug. Fix the bug, or record it and leave the path untested.
+- Check gate exit codes. `task … | grep | tail` returns `tail`'s status and will report a failing lint as clean.
+- No `QDialog::exec()` under offscreen — it blocks forever. Drive widgets with `QCoreApplication::sendEvent` and click buttons directly. Better, arm a zero-timer that closes any modal that appears, so a regression fails instead of hanging.
+- Drive timers with `QMetaObject::invokeMethod(timer, "timeout")`, never `QTest::qWait` on a poll interval.
+- Find widgets by object name. `findChild<T *>(QString())` matches the *first* child of that type and silently follows constructor order, so adding a widget can redirect an unrelated test.
+- Assert relationships and bounds, not pixels, fonts or wall-clock values. Where a pixel does matter, measure it (`QFontMetrics` against the widget's real width) rather than hardcoding one.
+
 ## C++ style (gui/)
 
 ### Formatting

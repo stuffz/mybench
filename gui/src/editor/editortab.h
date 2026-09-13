@@ -61,7 +61,15 @@ private:
     void runStatement();
     void startQueue(const QStringList &statements);
     void runNext();
-    void queueFinished(bool stoppedOnError);
+    // Why a run ended. Cancel is not an error and did not complete, and the
+    // note line has to say something different for each.
+    enum class RunOutcome
+    {
+        Completed,
+        StoppedOnError,
+        Cancelled,
+    };
+    void queueFinished(RunOutcome outcome);
 
     void explain(bool analyze);
     void pollState();

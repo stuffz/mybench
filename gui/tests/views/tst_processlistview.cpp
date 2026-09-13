@@ -261,6 +261,7 @@ private slots:
     void theIntervalChoiceSetsThePollPeriod_data();
     void theIntervalChoiceSetsThePollPeriod();
 
+    void thePanelOpensPausedSoNothingPollsUnasked();
     void clearingAutoRefreshStopsThePolling();
     void checkingAutoRefreshPollsStraightAway();
     void aTickIsSkippedWhileAPollIsStillInFlight();
@@ -456,6 +457,12 @@ void TestProcesslistView::thePollTimerRunsAtTwoSecondsByDefault()
     QVERIFY2(timer, "the list is polled on a two second timer");
     QVERIFY(timer->isActive());
 
+    // Polling is opt-in, so the interval is only observable once it is on.
+    QCheckBox *autoRefresh = switchWith(view, AutoRefreshText);
+    QVERIFY(autoRefresh);
+    autoRefresh->setChecked(true);
+    api()->flush(FlushMs);
+
     // Nothing ticks a timer in a test that never sits in an event loop for two
     // seconds: emit the timeout rather than wait for it.
     m_backend.clearRequests();
@@ -502,6 +509,35 @@ void TestProcesslistView::theIntervalChoiceSetsThePollPeriod()
     QVERIFY2(timerWith(view, periodMs), "the chosen period is what the timer runs at");
 }
 
+void TestProcesslistView::thePanelOpensPausedSoNothingPollsUnasked()
+{
+    // Polling is opt-in: a tab opened and left alone must not keep asking the
+    // server for a list nobody is reading. The one snapshot on open stays, so
+    // the panel still has rows to show.
+    m_backend.replyWithResult(QJsonArray{process(9, QStringLiteral("Query"))});
+    ProcesslistView view(QString::fromLatin1(ConnID));
+    api()->flush(FlushMs);
+
+    QCOMPARE(pollsSeen(m_backend), 1);
+    QCOMPARE(rowsShown(view), 1);
+
+    QCheckBox *autoRefresh = switchWith(view, AutoRefreshText);
+    QVERIFY(autoRefresh);
+    QVERIFY2(!autoRefresh->isChecked(), "the panel opens paused");
+
+    QComboBox *interval = view.findChild<QComboBox *>();
+    QVERIFY(interval);
+    QVERIFY2(!interval->isEnabled(), "a period with nothing polling on it is a dead control");
+
+    // Ticking the timer proves the pause is real rather than a label.
+    m_backend.clearRequests();
+    QTimer *timer = timerWith(view, DefaultPollMs);
+    QVERIFY(timer);
+    QMetaObject::invokeMethod(timer, "timeout");
+    api()->flush(FlushMs);
+    QCOMPARE(pollsSeen(m_backend), 0);
+}
+
 void TestProcesslistView::clearingAutoRefreshStopsThePolling()
 {
     m_backend.replyWithResult(QJsonArray{});
@@ -510,7 +546,8 @@ void TestProcesslistView::clearingAutoRefreshStopsThePolling()
 
     QCheckBox *autoRefresh = switchWith(view, AutoRefreshText);
     QVERIFY(autoRefresh);
-    QVERIFY2(autoRefresh->isChecked(), "the panel opens live");
+    autoRefresh->setChecked(true);
+    api()->flush(FlushMs);
     QWidget *interval = view.findChild<QComboBox *>();
     QVERIFY(interval);
     QVERIFY(interval->isEnabled());
@@ -565,6 +602,11 @@ void TestProcesslistView::aTickIsSkippedWhileAPollIsStillInFlight()
 {
     m_backend.replyWithResult(QJsonArray{});
     ProcesslistView view(QString::fromLatin1(ConnID));
+    api()->flush(FlushMs);
+
+    QCheckBox *autoRefresh = switchWith(view, AutoRefreshText);
+    QVERIFY(autoRefresh);
+    autoRefresh->setChecked(true);
     api()->flush(FlushMs);
 
     QTimer *timer = timerWith(view, DefaultPollMs);

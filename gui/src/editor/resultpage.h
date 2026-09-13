@@ -61,6 +61,7 @@ signals:
     void sortRequested(int column);
     void stagedChanged(int count);
     void errorRaised(const QString &message);
+    void copyRefused(const QString &reason);
 
 private:
     // The Ctrl+F fuzzy row filter over this result's backend buffer.

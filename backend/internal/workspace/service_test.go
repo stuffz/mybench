@@ -86,7 +86,7 @@ func TestLegacyFileIsImportedOnce(t *testing.T) {
 
 	// The file stays as a backup, but is never read again, so edits to it do
 	// not resurrect an old session over the live one.
-	if err := os.WriteFile(svc.legacyPath, []byte(`{"from":"edited"}`), 0o600); err != nil {
+	if err = os.WriteFile(svc.legacyPath, []byte(`{"from":"edited"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if blob, err = svc.Load(); err != nil || blob != `{"from":"legacy"}` {

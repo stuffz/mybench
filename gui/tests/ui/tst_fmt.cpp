@@ -26,6 +26,8 @@ private slots:
     void compactSwitchesUnitAtItsThresholds();
     void percentagesLoseTheDecimalAtTen_data();
     void percentagesLoseTheDecimalAtTen();
+    void percentagesKeepTheDecimalsTheCallerAsksFor_data();
+    void percentagesKeepTheDecimalsTheCallerAsksFor();
     void percentOfClampsAndRefusesAMissingWhole_data();
     void percentOfClampsAndRefusesAMissingWhole();
     void bytesClimbUnitsAndStopAtTebibytes_data();
@@ -128,6 +130,31 @@ void TestFmt::percentagesLoseTheDecimalAtTen()
     QFETCH(double, percent);
     QFETCH(QString, text);
     QCOMPARE(fmtPercent(percent), text);
+}
+
+void TestFmt::percentagesKeepTheDecimalsTheCallerAsksFor_data()
+{
+    QTest::addColumn<double>("percent");
+    QTest::addColumn<int>("decimals");
+    QTest::addColumn<QString>("text");
+
+    // The adaptive rule would round all three of these to "100%", which is the
+    // whole reason the overload exists.
+    QTest::newRow("four nines") << 99.996227 << 4 << QStringLiteral("99.9962%");
+    QTest::newRow("ten times worse") << 99.96227 << 4 << QStringLiteral("99.9623%");
+    QTest::newRow("hundred times worse") << 99.6227 << 4 << QStringLiteral("99.6227%");
+
+    QTest::newRow("zero decimals") << 42.7 << 0 << QStringLiteral("43%");
+    QTest::newRow("below ten keeps none unasked") << 3.14159 << 0 << QStringLiteral("3%");
+    QTest::newRow("full") << 100.0 << 4 << QStringLiteral("100.0000%");
+}
+
+void TestFmt::percentagesKeepTheDecimalsTheCallerAsksFor()
+{
+    QFETCH(double, percent);
+    QFETCH(int, decimals);
+    QFETCH(QString, text);
+    QCOMPARE(fmtPercent(percent, decimals), text);
 }
 
 void TestFmt::percentOfClampsAndRefusesAMissingWhole_data()

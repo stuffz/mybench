@@ -35,6 +35,7 @@ endfunction()
 
 add_gui_test(editor sqlscan "${GUI_SRC}/editor/sqlscan.cpp")
 add_gui_test(ui fmt "${GUI_SRC}/ui/fmt.cpp")
+add_gui_test(views hitratewindow "${GUI_SRC}/views/hitratewindow.cpp")
 add_gui_test(ui widgets "${GUI_SRC}/ui/widgets.cpp" "${GUI_SRC}/ui/switchbox.cpp"
              "${GUI_SRC}/app/theme.cpp" "${GUI_QRC}")
 add_gui_test(views processlistview
@@ -96,7 +97,8 @@ add_gui_test(shell mainwindow
     "${GUI_SRC}/shell/servertabbar.cpp" "${GUI_SRC}/shell/sidebar.cpp" "${GUI_SRC}/shell/statusstrip.cpp"
     "${GUI_SRC}/shell/workspace.cpp" "${GUI_SRC}/ui/fmt.cpp" "${GUI_SRC}/ui/switchbox.cpp"
     "${GUI_SRC}/ui/tableutil.cpp" "${GUI_SRC}/ui/widgets.cpp" "${GUI_SRC}/views/chart.cpp"
-    "${GUI_SRC}/views/dashboardview.cpp" "${GUI_SRC}/views/graphcanvas.cpp" "${GUI_SRC}/views/graphview.cpp"
+    "${GUI_SRC}/views/dashboardview.cpp" "${GUI_SRC}/views/hitratewindow.cpp"
+    "${GUI_SRC}/views/graphcanvas.cpp" "${GUI_SRC}/views/graphview.cpp"
     "${GUI_SRC}/views/historyview.cpp" "${GUI_SRC}/views/innodbview.cpp" "${GUI_SRC}/views/inspectorview.cpp"
     "${GUI_SRC}/views/panelbase.cpp" "${GUI_SRC}/views/processlistview.cpp" "${GUI_SRC}/views/serverinfoview.cpp"
     "${GUI_SRC}/views/statcard.cpp" "${GUI_SRC}/views/usersview.cpp"
@@ -135,7 +137,8 @@ add_gui_test(views chart "${GUI_SRC}/views/chart.cpp" "${GUI_SRC}/app/theme.cpp"
 add_gui_test(views graphcanvas "${GUI_SRC}/views/graphcanvas.cpp"
              "${GUI_SRC}/app/theme.cpp" "${GUI_QRC}")
 add_gui_test(views dashboardview
-    "${GUI_SRC}/views/dashboardview.cpp" "${GUI_SRC}/views/panelbase.cpp"
+    "${GUI_SRC}/views/dashboardview.cpp" "${GUI_SRC}/views/hitratewindow.cpp"
+    "${GUI_SRC}/views/panelbase.cpp"
     "${GUI_SRC}/views/chart.cpp" "${GUI_SRC}/views/statcard.cpp"
     "${GUI_SRC}/ui/fmt.cpp" "${GUI_SRC}/ui/tableutil.cpp" "${GUI_SRC}/ui/widgets.cpp"
     "${GUI_SRC}/ui/switchbox.cpp" "${GUI_SRC}/app/api.cpp" "${GUI_SRC}/app/icons.cpp"

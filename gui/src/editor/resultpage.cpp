@@ -70,6 +70,7 @@ ResultPage::ResultPage(const QString &sql, QWidget *parent) : QWidget(parent), m
     connect(escKey, &QShortcut::activated, this, &ResultPage::hideFilterBar);
 
     connect(m_grid, &ResultGrid::sortRequested, this, &ResultPage::sortRequested);
+    connect(m_grid, &ResultGrid::copyRefused, this, &ResultPage::copyRefused);
     connect(m_model, &ResultModel::stagedChanged, this, &ResultPage::stagedChanged);
     connect(m_model, &ResultModel::error, this, &ResultPage::errorRaised);
 }
