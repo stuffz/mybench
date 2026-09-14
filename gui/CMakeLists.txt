@@ -140,3 +140,12 @@ target_include_directories(mybench PRIVATE src)
 
 # The result grid is the hot path; keep it optimised even in dev builds.
 set_property(TARGET mybench PROPERTY WIN32_EXECUTABLE TRUE)
+
+# Off by default so the packaging builds (deb, arch, windows, macOS bundle)
+# configure exactly what they did before; gui:test turns it on. A cross build
+# could not run what it built anyway.
+option(MYBENCH_BUILD_TESTS "Build the QTest suite under tests/" OFF)
+if(MYBENCH_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

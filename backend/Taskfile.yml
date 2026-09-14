@@ -70,8 +70,28 @@ tasks:
   test:
     desc: Go tests, inside the devcontainer (MYBENCH_TEST_DSN lives there)
     dir: '{{.TASKFILE_DIR}}/..'
+    deps: [devc:check]
     cmds:
       - '{{.DEVC}} sh -c "cd backend && go test ./... {{.CLI_ARGS}}"'
+
+  # The compose db publishes host 3306. When another container already holds
+  # it, db never starts, dev loses DNS for `db`, and every test dies with
+  # "lookup db: no such host" — far from the cause. Name the culprit instead.
+  devc:check:
+    internal: true
+    silent: true
+    dir: '{{.TASKFILE_DIR}}/..'
+    status:
+      - test -f /.dockerenv
+    cmds:
+      - |
+        if devcontainer exec --workspace-folder . getent hosts db >/dev/null 2>&1; then exit 0; fi
+        port=$(sed -n 's/^MYBENCH_DB_PORT=//p' .devcontainer/.env 2>/dev/null)
+        port=${port:-3306}
+        echo "devcontainer: dev cannot reach db; start it with: devcontainer up --workspace-folder ." >&2
+        echo "containers holding host port $port (the compose db needs it; MYBENCH_DB_PORT in .devcontainer/.env moves it):" >&2
+        docker ps --filter publish=$port >&2
+        exit 1
 
   lint:
     desc: golangci-lint per backend/.golangci.yml, inside the devcontainer

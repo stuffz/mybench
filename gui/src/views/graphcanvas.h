@@ -5,6 +5,7 @@
 // constants, so the layout is recognisably the same graph. The chrome around
 // it lives in GraphView (graphview.h).
 #include <QHash>
+#include <QSet>
 #include <QVector>
 #include <QWidget>
 

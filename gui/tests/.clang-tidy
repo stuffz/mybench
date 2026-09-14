@@ -1,0 +1,20 @@
+# Extends gui/.clang-tidy; only what QTest breaks is turned off here, so the
+# tests are held to the same rules as the code they cover.
+#
+#   bugprone-unchecked-optional-access
+#                 QVERIFY returns from the test function on failure, which the
+#                 check cannot see, so the idiomatic
+#                     QVERIFY(node.estRows);
+#                     QCOMPARE(*node.estRows, 1.0);
+#                 reads to it as an unchecked dereference.
+#   clang-analyzer-core.CallAndMessage
+#                 The same blind spot, one step along: after
+#                     QLabel *v = findChild<QLabel *>(...);
+#                     QVERIFY(v != nullptr);
+#                 the analyzer still treats v->text() as a call through null.
+
+InheritParentConfig: true
+
+Checks: >
+  -bugprone-unchecked-optional-access,
+  -clang-analyzer-core.CallAndMessage,

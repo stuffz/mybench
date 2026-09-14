@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         qt6-base-dev qt6-base-dev-tools qt6-svg-dev \
         libgl1 libegl1 libxkbcommon-x11-0 \
         xvfb xdotool imagemagick curl ca-certificates \
-        clang-format clang-tidy \
+        clang-format clang-tidy gcovr \
     && rm -rf /var/lib/apt/lists/*
 
 # Match the host uid so build artifacts on the bind mount stay writable.

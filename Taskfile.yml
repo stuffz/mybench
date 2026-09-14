@@ -31,9 +31,10 @@ tasks:
       - task: format-check
 
   test:
-    desc: All tests (currently the Go backend — the GUI has none yet)
+    desc: All tests — go test (backend), ctest over the QTest suite (gui)
     cmds:
       - task: backend:test
+      - task: gui:test
 
   lint:
     desc: Lint everything — golangci-lint (backend), clang-tidy + standalone headers (gui)

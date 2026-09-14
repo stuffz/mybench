@@ -46,8 +46,13 @@ void ResultModel::setRowCount(int rowCount)
         m_cache.clear();
         m_pending.clear();
         // Staged edits keyed by row would point at removed or shifted rows.
+        const bool hadStaged = !m_staged.isEmpty();
         m_staged.clear();
         endResetModel();
+        if (hadStaged)
+        {
+            emit stagedChanged(0);
+        }
     }
 }
 
@@ -69,8 +74,17 @@ void ResultModel::clearResult()
     m_rows = 0;
     m_cache.clear();
     m_pending.clear();
+    const bool hadStaged = !m_staged.isEmpty();
     m_staged.clear();
+    // Reset alongside the columns they describe, the way setResult does.
+    m_editable = false;
+    m_editableCols.clear();
+    m_keyCols.clear();
     endResetModel();
+    if (hadStaged)
+    {
+        emit stagedChanged(0);
+    }
 }
 
 int ResultModel::rowCount(const QModelIndex &parent) const
@@ -235,6 +249,10 @@ QVariant ResultModel::headerData(int section, Qt::Orientation o, int role) const
 
 Qt::ItemFlags ResultModel::flags(const QModelIndex &ix) const
 {
+    if (!ix.isValid())
+    {
+        return Qt::NoItemFlags;
+    }
     Qt::ItemFlags f = Qt::ItemIsSelectable | Qt::ItemIsEnabled;
     if (m_editable && m_editableCols.contains(ix.column()))
     {

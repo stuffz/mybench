@@ -9,9 +9,11 @@
 -isystem/usr/include/qt6/QtWidgets
 -isystem/usr/include/qt6/QtNetwork
 -isystem/usr/include/qt6/QtSvg
+-isystem/usr/include/qt6/QtTest
 -isystem/usr/include/x86_64-linux-gnu/qt6
 -isystem/usr/include/x86_64-linux-gnu/qt6/QtCore
 -isystem/usr/include/x86_64-linux-gnu/qt6/QtGui
 -isystem/usr/include/x86_64-linux-gnu/qt6/QtWidgets
 -isystem/usr/include/x86_64-linux-gnu/qt6/QtNetwork
 -isystem/usr/include/x86_64-linux-gnu/qt6/QtSvg
+-isystem/usr/include/x86_64-linux-gnu/qt6/QtTest

@@ -2,3 +2,4 @@
 SPEC.md
 .task/
 bin/
+.devcontainer/.env

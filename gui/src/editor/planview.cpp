@@ -25,7 +25,10 @@ namespace
 // (cert-err58).
 const QString &numPat()
 {
-    static const QString pat = R"([\d.]+(?:[eE][-+]?\d+)?)";
+    // The fraction is spelled out rather than [\d.]+ so the pattern cannot
+    // run across the ".." of a range: greedy, it swallowed "1.05..3.25"
+    // whole and toDouble() then handed back 0 for every ranged cost.
+    static const QString pat = R"(\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)";
     return pat;
 }
 

@@ -36,6 +36,50 @@ tasks:
     cmds:
       - ./gui/build/mybench
 
+  test:
+    desc: Build and run the QTest suite (gui/tests) under ctest
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      # Its own build tree: the tests are gated behind MYBENCH_BUILD_TESTS, so
+      # gui:build's cache stays exactly what the app alone needs.
+      #
+      # _GLIBCXX_ASSERTIONS turns undefined behaviour inside the standard
+      # library into a loud abort: a std::clamp with its bounds crossed, or a
+      # container index out of range, fails here instead of quietly returning
+      # whatever the implementation happened to compute that day.
+      - docker run --rm -v "$PWD":/work -w /work/gui mybench-qt sh -c
+        'cmake -S . -B build-test -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+        -DMYBENCH_BUILD_TESTS=ON
+        -DCMAKE_CXX_FLAGS="-Wall -Wextra -D_GLIBCXX_ASSERTIONS"
+        && ninja -C build-test gui_tests
+        && ctest --test-dir build-test --output-on-failure {{.CLI_ARGS}}'
+
+  coverage:
+    desc: Line coverage of src/ from the QTest suite, per file (gcovr)
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      # Its own tree, separate from build-test: --coverage and -O0 are not what
+      # anyone wants to run, and the counters would be mixed into the optimised
+      # build's.
+      #
+      # The whole default target, not just gui_tests: gcovr can only report a
+      # file it has counters for, so building only the units under test would
+      # hide every untested file instead of showing it at 0% — which is the
+      # one question this task exists to answer.
+      #
+      # Read the columns, not the total. Most of src/ is widget wiring and
+      # painting that a unit test was never going to enter, so one percentage
+      # across all of it measures the shape of the app rather than the tests.
+      - docker run --rm -v "$PWD":/work -w /work/gui mybench-qt sh -c
+        'cmake -S . -B build-coverage -G Ninja -DCMAKE_BUILD_TYPE=Debug
+        -DMYBENCH_BUILD_TESTS=ON
+        -DCMAKE_CXX_FLAGS="--coverage -O0 -g -Wall -Wextra"
+        -DCMAKE_EXE_LINKER_FLAGS="--coverage"
+        && ninja -C build-coverage
+        && ctest --test-dir build-coverage --output-on-failure
+        && gcovr --root . --filter src/ --sort uncovered-percent
+        --txt --print-summary {{.CLI_ARGS}}'
+
   image:windows:
     desc: Build the Windows cross-build image (static Qt6 for MinGW — slow, cached)
     dir: '{{.TASKFILE_DIR}}/..'
@@ -160,14 +204,14 @@ tasks:
     dir: '{{.TASKFILE_DIR}}/..'
     cmds:
       - docker run --rm -v "$PWD":/work -w /work/gui mybench-qt sh -c
-        'clang-format -i src/*/*.cpp src/*/*.h'
+        'clang-format -i src/*/*.cpp src/*/*.h tests/*/*.cpp'
 
   format-check:
     desc: Verify GUI sources are clang-format clean (used by CI)
     dir: '{{.TASKFILE_DIR}}/..'
     cmds:
       - docker run --rm -v "$PWD":/work -w /work/gui mybench-qt sh -c
-        'clang-format --dry-run --Werror src/*/*.cpp src/*/*.h'
+        'clang-format --dry-run --Werror src/*/*.cpp src/*/*.h tests/*/*.cpp'
 
   lint:
     desc: clang-tidy over the GUI sources (checks in gui/.clang-tidy)
@@ -189,8 +233,9 @@ tasks:
         && cmake -S . -B build-lint -G Ninja -DCMAKE_BUILD_TYPE=Debug
         -DHAVE_NO_DIRECT_EXTERN_ACCESS=OFF
         -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_CXX_FLAGS="-Wall -Wextra"
+        -DMYBENCH_BUILD_TESTS=ON
         && ninja -C build-lint
-        && ls src/*/*.cpp | xargs -P "$(nproc)" -I{}
+        && ls src/*/*.cpp tests/*/*.cpp | xargs -P "$(nproc)" -I{}
         clang-tidy --quiet --warnings-as-errors="*" -p build-lint {}
         && echo "clang-tidy clean"
         && ls src/*/*.h | xargs -P "$(nproc)" -I{}

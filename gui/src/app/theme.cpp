@@ -549,6 +549,15 @@ const AppPalette &app(const QString &id)
             return t.p;
         }
     }
+    // The named default, not whichever theme happens to be listed first:
+    // reordering the table must not change what an unknown id resolves to.
+    for (const auto &t : appThemes())
+    {
+        if (t.id == QLatin1String(defaultApp))
+        {
+            return t.p;
+        }
+    }
     return appThemes().first().p;
 }
 
@@ -557,6 +566,15 @@ const EditorPalette &editor(const QString &id)
     for (const auto &t : editorThemes())
     {
         if (t.id == id)
+        {
+            return t.p;
+        }
+    }
+    // The named default, not whichever theme happens to be listed first:
+    // reordering the table must not change what an unknown id resolves to.
+    for (const auto &t : editorThemes())
+    {
+        if (t.id == QLatin1String(defaultEditor))
         {
             return t.p;
         }

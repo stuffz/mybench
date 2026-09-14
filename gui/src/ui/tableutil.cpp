@@ -3,6 +3,7 @@
 #include <QFontMetrics>
 #include <QHash>
 #include <QHeaderView>
+#include <QSet>
 #include <QTableWidget>
 
 #include <algorithm>
@@ -66,7 +67,10 @@ void putRow(QTableWidget *t, const QStringList &cells)
     const SortPause pause(t);
     const int row = t->rowCount();
     t->insertRow(row);
-    for (int i = 0; i < cells.size(); ++i)
+    // setItem ignores an out-of-range column and does not adopt the item, so
+    // a cell past the last column would be built and then leaked.
+    const int n = std::min(int(cells.size()), t->columnCount());
+    for (int i = 0; i < n; ++i)
     {
         auto *it = new QTableWidgetItem(cells.at(i));
         it->setToolTip(cells.at(i));
@@ -79,9 +83,16 @@ void putRow(QTableWidget *t, const QList<QTableWidgetItem *> &items)
     const SortPause pause(t);
     const int row = t->rowCount();
     t->insertRow(row);
-    for (int i = 0; i < items.size(); ++i)
+    const int n = std::min(int(items.size()), t->columnCount());
+    for (int i = 0; i < n; ++i)
     {
         t->setItem(row, i, items.at(i));
+    }
+    // These were handed over to us, so the ones with no column to go in are
+    // ours to destroy rather than leak.
+    for (int i = n; i < items.size(); ++i)
+    {
+        delete items.at(i);
     }
 }
 
@@ -96,9 +107,13 @@ void putKV(QTableWidget *t, const QVector<QPair<QString, QString>> &rows)
         }
     }
 
-    bool sameRows = t->rowCount() == rows.size();
+    bool sameRows = t->columnCount() >= 2 && t->rowCount() == rows.size();
     if (sameRows)
     {
+        // Each key must match a row, and a *different* row: the same count
+        // with "a" twice and no "b" would rewrite one row and leave the other
+        // showing a value that is no longer in the data.
+        QSet<QString> seen;
         for (const auto &kv : rows)
         {
             if (!at.contains(kv.first))
@@ -106,7 +121,9 @@ void putKV(QTableWidget *t, const QVector<QPair<QString, QString>> &rows)
                 sameRows = false;
                 break;
             }
+            seen.insert(kv.first);
         }
+        sameRows = sameRows && seen.size() == rows.size();
     }
     if (sameRows)
     {
@@ -159,6 +176,9 @@ void fitColumns(QTableWidget *t, int minChars, int maxChars)
     }
 }
 
+// One header line and a little air: what an empty table shrinks to.
+constexpr int MinHeight = 32;
+
 void fitHeight(QTableWidget *t, int maxHeight)
 {
     int h = t->horizontalHeader()->height() + 4;
@@ -166,5 +186,8 @@ void fitHeight(QTableWidget *t, int maxHeight)
     {
         h += t->rowHeight(r);
     }
-    t->setFixedHeight(std::clamp(h, 32, maxHeight));
+    // The floor keeps an empty table from being a sliver, the cap is what the
+    // caller's layout has room for. Applied in this order the cap wins when
+    // they disagree; std::clamp would be undefined with its bounds crossed.
+    t->setFixedHeight(std::min(std::max(h, MinHeight), maxHeight));
 }

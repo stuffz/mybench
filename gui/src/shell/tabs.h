@@ -33,9 +33,15 @@ inline bool isSingletonView(TabView v)
     case TabView::Graph:
     case TabView::History:
         return true;
-    default:
+    case TabView::Editor:
+    case TabView::TableInspect:
+    case TabView::SchemaInspect:
         return false;
     }
+    // Unreachable while the enum is complete, which is the point: with no
+    // default arm a new view has to be classified here instead of silently
+    // becoming non-singleton and duplicating itself per connection.
+    return false;
 }
 
 inline QString viewId(TabView v)

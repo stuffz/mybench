@@ -139,9 +139,22 @@ void GraphCanvas::rebuild()
     m_schemaList.clear();
     m_schemaCounts.clear();
 
+    // Only edges that will actually be drawn count towards a table being
+    // connected: a self reference or an endpoint outside the fetched set
+    // leaves a node as alone on screen as one with no edge at all.
+    QSet<QString> present;
+    present.reserve(int(m_raw.size()));
+    for (const RawNode &n : m_raw)
+    {
+        present.insert(n.schema + "." + n.table);
+    }
     QHash<QString, int> degree;
     for (const auto &e : m_rawEdges)
     {
+        if (e.first == e.second || !present.contains(e.first) || !present.contains(e.second))
+        {
+            continue;
+        }
         degree[e.first]++;
         degree[e.second]++;
     }
