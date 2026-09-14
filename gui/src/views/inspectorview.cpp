@@ -2,6 +2,7 @@
 
 #include "app/api.h"
 #include "ui/fmt.h"
+#include "ui/handcursor.h"
 #include "ui/tableutil.h"
 
 #include <QHeaderView>
@@ -33,6 +34,7 @@ InspectorView::InspectorView(
     m_tabs = new QTabWidget;
     // No document mode — it suppresses the stylesheet pane frame that draws
     // the separator under the tab strip (see theme.cpp).
+    handCursorOnTabs(m_tabs->tabBar());
     root->addWidget(m_tabs, 1);
 
     // --- the sections this target has -------------------------------------

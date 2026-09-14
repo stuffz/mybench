@@ -4,6 +4,7 @@
 #include "app/icons.h"
 #include "app/theme.h"
 #include "shell/tabs.h"
+#include "ui/handcursor.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -95,6 +96,7 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     // per icon, so the 14px glyphs came with ~20px of dead space between rows.
     m_admin->setIconSize(QSize(14, 14));
     m_admin->setFrameShape(QFrame::NoFrame);
+    handCursorOnRows(m_admin);
     m_stack->addWidget(m_admin);
 
     auto *schemaPane = new QWidget;
@@ -126,6 +128,7 @@ Sidebar::Sidebar(QWidget *parent) : QWidget(parent)
     m_tree->setUniformRowHeights(true);
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     m_tree->setExpandsOnDoubleClick(false);
+    handCursorOnRows(m_tree);
     schemaLayout->addWidget(m_tree, 1);
     m_stack->addWidget(schemaPane);
     m_stack->setCurrentIndex(1);

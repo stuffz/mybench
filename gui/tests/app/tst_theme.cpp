@@ -27,11 +27,11 @@ constexpr int BaseFontPx = 13;
 // which is exactly what the callers below look for.
 QVector<QColor> colours(const AppPalette &p)
 {
-    static_assert(sizeof(AppPalette) == 20 * sizeof(QColor), "list every AppPalette colour below");
-    return {p.background,  p.foreground, p.card,    p.cardFg,  p.primary,
-            p.primaryFg,   p.secondary,  p.muted,   p.mutedFg, p.accent,
-            p.destructive, p.warning,    p.success, p.info,    p.special,
-            p.border,      p.input,      p.ring,    p.sidebar, p.sidebarBorder};
+    static_assert(sizeof(AppPalette) == 21 * sizeof(QColor), "list every AppPalette colour below");
+    return {p.background, p.foreground, p.card,         p.cardFg,  p.primary, p.primaryFg,
+            p.secondary,  p.muted,      p.mutedFg,      p.accent,  p.hover,   p.destructive,
+            p.warning,    p.success,    p.info,         p.special, p.border,  p.input,
+            p.ring,       p.sidebar,    p.sidebarBorder};
 }
 
 QVector<QColor> colours(const EditorPalette &p)
@@ -55,6 +55,7 @@ private slots:
     void appThemesAreUniquelyIdentified();
     void editorThemesAreUniquelyIdentified();
     void everyAppThemeFillsItsWholePalette();
+    void everyThemesHoverIsVisibleOnBothSurfaces();
     void everyEditorThemeFillsItsWholePalette();
 
     void lookupReturnsTheThemesOwnPalette();
@@ -130,6 +131,28 @@ void TestTheme::everyAppThemeFillsItsWholePalette()
                 all.at(i).isValid(), qPrintable(QStringLiteral("%1 colour %2").arg(t.id).arg(i))
             );
         }
+    }
+}
+
+void TestTheme::everyThemesHoverIsVisibleOnBothSurfaces()
+{
+    // Controls sit on the window (%BG%) and on dialogs and cards (%CARD%), and
+    // hover to one colour on both. Where that colour matches the surface the
+    // hover is invisible: gruvbox, nord and solarized all had muted == card, so
+    // hovering a button on any dialog painted it the colour it already was.
+    for (const AppTheme &t : theme::appThemes())
+    {
+        QVERIFY2(
+            t.p.hover != t.p.card,
+            qPrintable(QStringLiteral("%1: hover %2 is the card colour").arg(t.id, t.p.hover.name())
+            )
+        );
+        QVERIFY2(
+            t.p.hover != t.p.background,
+            qPrintable(
+                QStringLiteral("%1: hover %2 is the window colour").arg(t.id, t.p.hover.name())
+            )
+        );
     }
 }
 

@@ -3,6 +3,7 @@
 #include "app/api.h"
 #include "app/theme.h"
 #include "editor/sqlscan.h" // fuzzyScore
+#include "ui/handcursor.h"
 #include "ui/switchbox.h"
 #include "ui/widgets.h"
 #include "views/graphcanvas.h"
@@ -116,6 +117,7 @@ GraphView::GraphView(const QString &connID, QWidget *parent) : QWidget(parent), 
     m_findList = new QListWidget(this);
     m_findList->setVisible(false);
     m_findList->setMaximumHeight(180);
+    handCursorOnRows(m_findList);
 
     connect(fitBtn, &QPushButton::clicked, m_canvas, &GraphCanvas::fit);
     connect(m_hideIsolated, &QCheckBox::toggled, m_canvas, &GraphCanvas::setHideIsolated);

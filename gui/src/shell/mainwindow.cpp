@@ -16,6 +16,7 @@
 #include "shell/tabs.h"
 #include "shell/workspace.h"
 #include "ui/closeglyph.h"
+#include "ui/handcursor.h"
 #include "ui/widgets.h"
 #include "views/dashboardview.h"
 #include "views/graphview.h"
@@ -703,6 +704,7 @@ QTabWidget *MainWindow::paneFor(const QString &connID)
     // hit area is wider than its glyph, and that transparent margin already
     // pads the tab's right side.
     pane->tabBar()->setObjectName("QueryTabs");
+    handCursorOnTabs(pane->tabBar());
     // Closing is the custom glyph's job (styleTabCloseButton), which every
     // tab gets. Not tabsClosable: that adds a stock button on the side the
     // style dictates — right on Linux and Windows, where setTabButton then
@@ -954,7 +956,6 @@ void MainWindow::styleTabCloseButton(QTabWidget *pane, int index)
     // the stylesheet's unscaled tab paddings.
     const int side = theme::scaledPx(CloseButtonScale);
     btn->setFixedSize(side + CloseEdgeGapPx, side);
-    btn->setCursor(Qt::PointingHandCursor);
     btn->setToolTip(tr("Close Tab"));
     btn->setStyleSheet(QString("QPushButton { border: none; background: transparent; color: %1; "
                                "padding: 0 %4px 0 0; font-size: %3px; }"

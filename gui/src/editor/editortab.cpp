@@ -9,6 +9,7 @@
 #include "editor/resultpage.h"
 #include "editor/sqleditor.h"
 #include "editor/sqlscan.h"
+#include "ui/handcursor.h"
 #include "ui/widgets.h"
 
 #include <QComboBox>
@@ -158,6 +159,7 @@ EditorTab::EditorTab(
     // No document mode — it suppresses the stylesheet pane frame that draws
     // the separator under the tab strip (see theme.cpp).
     m_resultTabs->setTabsClosable(false);
+    handCursorOnTabs(m_resultTabs->tabBar());
     m_plan = new PlanView;
     auto *empty = new QWidget;
 

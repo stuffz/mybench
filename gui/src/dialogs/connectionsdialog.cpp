@@ -3,6 +3,7 @@
 #include "app/api.h"
 #include "app/icons.h"
 #include "app/theme.h"
+#include "ui/handcursor.h"
 #include "ui/widgets.h"
 
 #include <QColorDialog>
@@ -959,6 +960,7 @@ void ConnectionsDialog::buildQuickPage(QVBoxLayout *root)
     // No focus: the list must never swallow the key presses (type-to-search),
     // and a single click acts immediately anyway.
     m_quickList->setFocusPolicy(Qt::NoFocus);
+    handCursorOnRows(m_quickList);
     connect(m_quickList, &QListWidget::itemClicked, this, &ConnectionsDialog::pickQuick);
     lay->addWidget(m_quickList, 1);
 

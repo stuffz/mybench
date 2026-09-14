@@ -19,6 +19,10 @@ struct AppPalette
     QColor card, cardFg;       // dialogs, popovers
     QColor primary, primaryFg; // solid buttons
     QColor secondary, muted, mutedFg, accent;
+    // Hover fill. Kept apart from muted because muted is the card's own tone in
+    // most themes, and a control hovering to the colour it sits on shows
+    // nothing at all.
+    QColor hover;
     QColor destructive, warning, success, info, special;
     QColor border, input, ring;
     QColor sidebar, sidebarBorder;

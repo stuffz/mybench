@@ -100,7 +100,6 @@ void ServerTabBar::setConnections(
                                      "QPushButton:hover { color: %2; }")
                                  .arg(pal.mutedFg.name(), pal.foreground.name())
                                  .arg(theme::scaledPx(CloseGlyphScale)));
-        close->setCursor(Qt::PointingHandCursor);
         connect(close, &QPushButton::clicked, this, [this, id]() { emit closeRequested(id); });
         lay->addWidget(close);
 

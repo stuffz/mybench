@@ -55,6 +55,8 @@ qt_add_executable(mybench
     src/views/historyview.cpp
     src/views/dashboardview.cpp
     src/views/hitratewindow.cpp
+    src/app/appstyle.cpp
+    src/ui/handcursor.cpp
     src/views/statcard.cpp
     src/views/inspectorview.cpp
     src/views/graphcanvas.cpp

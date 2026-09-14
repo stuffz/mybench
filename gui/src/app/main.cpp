@@ -1,5 +1,6 @@
 // Native mybench client. The window comes up immediately; the Go backend is
 // spawned alongside and the UI populates when it reports its port.
+#include "app/appstyle.h"
 #include "app/backend.h"
 #include "app/theme.h"
 #include "shell/mainwindow.h"
@@ -11,37 +12,12 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPixmap>
-#include <QProxyStyle>
 #include <QTextStream>
 #include <QTimer>
 #include <QWidget>
 
 namespace
 {
-
-// The web build hand-rolled its tooltips because "native title tooltips are
-// too slow to appear for icon-only destructive buttons" (index.css). The delay
-// is a style hint rather than a property, so overriding it here restores that
-// feel for every tooltip, item views included.
-class InstantTooltips : public QProxyStyle
-{
-public:
-    int styleHint(
-        StyleHint hint, const QStyleOption *option, const QWidget *widget,
-        QStyleHintReturn *returnData
-    ) const override
-    {
-        switch (hint)
-        {
-        case SH_ToolTip_WakeUpDelay:
-            return 150;
-        case SH_ToolTip_FallAsleepDelay:
-            return 0;
-        default:
-            return QProxyStyle::styleHint(hint, option, widget, returnData);
-        }
-    }
-};
 
 // Prints the live widget tree: class, object name, geometry, and whatever text
 // the widget carries. Screenshots answer "does it look right"; this answers
@@ -110,7 +86,7 @@ int main(int argc, char **argv)
     parser.addHelpOption();
     parser.process(app);
 
-    app.setStyle(new InstantTooltips); // QApplication takes ownership
+    app.setStyle(new AppStyle); // QApplication takes ownership
 
     theme::loadFonts();
     theme::apply(theme::defaultApp, 13);

@@ -63,6 +63,7 @@ AppPalette blackPalette()
     p.primaryFg = QColor("#171717");
     p.secondary = QColor("#262626");
     p.muted = QColor("#262626");
+    p.hover = QColor("#262626");
     p.mutedFg = QColor("#a1a1a1");
     p.accent = QColor("#262626");
     p.destructive = QColor("#ff6467");
@@ -89,6 +90,7 @@ AppPalette gruvboxPalette()
     p.primaryFg = QColor("#282828");
     p.secondary = QColor("#3c3836");
     p.muted = QColor("#3c3836");
+    p.hover = QColor("#504945");
     p.mutedFg = QColor("#a89984");
     p.accent = QColor("#504945");
     p.destructive = QColor("#fb4934");
@@ -115,6 +117,7 @@ AppPalette nordPalette()
     p.primaryFg = QColor("#2e3440");
     p.secondary = QColor("#3b4252");
     p.muted = QColor("#3b4252");
+    p.hover = QColor("#434c5e");
     p.mutedFg = QColor("#94a3b8");
     p.accent = QColor("#434c5e");
     p.destructive = QColor("#bf616a");
@@ -141,6 +144,7 @@ AppPalette solarizedPalette()
     p.primaryFg = QColor("#fdf6e3");
     p.secondary = QColor("#073642");
     p.muted = QColor("#073642");
+    p.hover = QColor("#0f4b5b");
     p.mutedFg = QColor("#657b83");
     p.accent = QColor("#0f4b5b");
     p.destructive = QColor("#dc322f");
@@ -317,7 +321,7 @@ QPushButton, QToolButton#SnippetsBtn {
     border: 1px solid %INPUT%; border-radius: 8px;
     padding: 2px 10px;
 }
-QPushButton:hover, QToolButton#SnippetsBtn:hover { background: %MUTED%; }
+QPushButton:hover, QToolButton#SnippetsBtn:hover { background: %HOVER%; }
 /* Named rather than a bare QToolButton rule: QLineEdit's clear button is a
    QToolButton subclass and must keep its native compact look. */
 QToolButton#SnippetsBtn { padding-right: 24px; }
@@ -332,13 +336,13 @@ QPushButton[variant="primary"] { background: %PRIMARY%; color: %PRIMARYFG%; bord
 QPushButton[variant="primary"]:hover { background: %PRIMARY%; }
 QPushButton[variant="primary"]:disabled { background: %MUTED%; color: %MUTEDFG%; }
 QPushButton[variant="ghost"] { border: 1px solid transparent; color: %MUTEDFG%; }
-QPushButton[variant="ghost"]:hover { background: %MUTED%; color: %FG%; }
+QPushButton[variant="ghost"]:hover { background: %HOVER%; color: %FG%; }
 /* Fixed-width −/+ steppers: the base 10px side padding leaves a ~26px button
    no room for its glyph, which clips to a sliver. */
 QPushButton#Stepper { padding: 0; }
 QPushButton[variant="destructive"] { background: %DESTRUCTIVE%; color: %BG%; border: 1px solid transparent; }
 QPushButton[variant="toggle"] { border: 1px solid transparent; border-radius: 6px; color: %MUTEDFG%; padding: 2px 8px; }
-QPushButton[variant="toggle"]:hover { background: %MUTED%; color: %FG%; }
+QPushButton[variant="toggle"]:hover { background: %HOVER%; color: %FG%; }
 QPushButton[variant="toggle"]:checked { background: %MUTED%; color: %FG%; }
 
 QLineEdit, QSpinBox, QPlainTextEdit#Plain {
@@ -476,6 +480,7 @@ QLabel#smallText { font-size: %FSSMALL%px; }
         .replace("%CHEVRON%", chevronPath(p.mutedFg, chev))
         .replace("%CHEVPX%", QString::number(chev))
         .replace("%MONO%", mono)
+        .replace("%HOVER%", p.hover.name())
         .replace("%FSBIG%", QString::number(qMax(8, int(std::lround(fs * ScaleBig)))))
         .replace("%FSSMALL%", QString::number(qMax(8, int(std::lround(fs * ScaleSmall)))))
         .replace("%CTLH%", QString::number(ctlh))

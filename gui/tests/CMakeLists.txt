@@ -36,6 +36,8 @@ endfunction()
 add_gui_test(editor sqlscan "${GUI_SRC}/editor/sqlscan.cpp")
 add_gui_test(ui fmt "${GUI_SRC}/ui/fmt.cpp")
 add_gui_test(views hitratewindow "${GUI_SRC}/views/hitratewindow.cpp")
+add_gui_test(app appstyle "${GUI_SRC}/app/appstyle.cpp" "${GUI_SRC}/ui/handcursor.cpp")
+add_gui_test(ui handcursor "${GUI_SRC}/ui/handcursor.cpp")
 add_gui_test(ui widgets "${GUI_SRC}/ui/widgets.cpp" "${GUI_SRC}/ui/switchbox.cpp"
              "${GUI_SRC}/app/theme.cpp" "${GUI_QRC}")
 add_gui_test(views processlistview
@@ -45,7 +47,7 @@ add_gui_test(views processlistview
     "${GUI_SRC}/ui/widgets.cpp" "${GUI_SRC}/app/api.cpp"
     "${GUI_SRC}/app/theme.cpp" "${GUI_QRC}")
 add_gui_test(views graphview
-    "${GUI_SRC}/views/graphview.cpp" "${GUI_SRC}/views/graphcanvas.cpp"
+    "${GUI_SRC}/views/graphview.cpp" "${GUI_SRC}/ui/handcursor.cpp" "${GUI_SRC}/views/graphcanvas.cpp"
     "${GUI_SRC}/editor/sqlscan.cpp" "${GUI_SRC}/ui/switchbox.cpp"
     "${GUI_SRC}/ui/widgets.cpp" "${GUI_SRC}/app/api.cpp"
     "${GUI_SRC}/app/theme.cpp" "${GUI_QRC}")
@@ -68,7 +70,7 @@ add_gui_test(ui tableutil "${GUI_SRC}/ui/tableutil.cpp")
 # tabs.h is header-only, so there is no implementation to compile alongside.
 add_gui_test(shell tabs)
 add_gui_test(dialogs connectionsdialog "${GUI_SRC}/dialogs/connectionsdialog.cpp"
-             "${GUI_SRC}/app/api.cpp" "${GUI_SRC}/app/icons.cpp"
+             "${GUI_SRC}/ui/handcursor.cpp" "${GUI_SRC}/app/api.cpp" "${GUI_SRC}/app/icons.cpp"
              "${GUI_SRC}/app/theme.cpp" "${GUI_SRC}/ui/widgets.cpp" "${GUI_QRC}")
 add_gui_test(dialogs prefsdialog "${GUI_SRC}/dialogs/prefsdialog.cpp"
              "${GUI_SRC}/app/api.cpp" "${GUI_SRC}/app/icons.cpp"
@@ -78,7 +80,7 @@ add_gui_test(dialogs prefsdialog "${GUI_SRC}/dialogs/prefsdialog.cpp"
 # whole connections dialog and its closure into this target.
 add_gui_test(dialogs smalldialogs "${GUI_SRC}/dialogs/querydialog.cpp"
              "${GUI_SRC}/dialogs/aboutdialog.cpp" "${GUI_SRC}/dialogs/shortcutsdialog.cpp"
-             "${GUI_SRC}/dialogs/connectionsdialog.cpp"
+             "${GUI_SRC}/dialogs/connectionsdialog.cpp" "${GUI_SRC}/ui/handcursor.cpp"
              "${GUI_SRC}/editor/sqlhighlighter.cpp"
              "${GUI_SRC}/app/api.cpp" "${GUI_SRC}/app/icons.cpp" "${GUI_SRC}/app/theme.cpp"
              "${GUI_SRC}/ui/widgets.cpp" "${GUI_QRC}")
@@ -94,7 +96,7 @@ add_gui_test(shell mainwindow
     "${GUI_SRC}/editor/editortab.cpp" "${GUI_SRC}/editor/planview.cpp" "${GUI_SRC}/editor/resultgrid.cpp"
     "${GUI_SRC}/editor/resultmodel.cpp" "${GUI_SRC}/editor/resultpage.cpp" "${GUI_SRC}/editor/sqleditor.cpp"
     "${GUI_SRC}/editor/sqlhighlighter.cpp" "${GUI_SRC}/editor/sqlscan.cpp" "${GUI_SRC}/shell/mainwindow.cpp"
-    "${GUI_SRC}/shell/servertabbar.cpp" "${GUI_SRC}/shell/sidebar.cpp" "${GUI_SRC}/shell/statusstrip.cpp"
+    "${GUI_SRC}/shell/servertabbar.cpp" "${GUI_SRC}/shell/sidebar.cpp" "${GUI_SRC}/ui/handcursor.cpp" "${GUI_SRC}/shell/statusstrip.cpp"
     "${GUI_SRC}/shell/workspace.cpp" "${GUI_SRC}/ui/fmt.cpp" "${GUI_SRC}/ui/switchbox.cpp"
     "${GUI_SRC}/ui/tableutil.cpp" "${GUI_SRC}/ui/widgets.cpp" "${GUI_SRC}/views/chart.cpp"
     "${GUI_SRC}/views/dashboardview.cpp" "${GUI_SRC}/views/hitratewindow.cpp"
@@ -103,7 +105,7 @@ add_gui_test(shell mainwindow
     "${GUI_SRC}/views/panelbase.cpp" "${GUI_SRC}/views/processlistview.cpp" "${GUI_SRC}/views/serverinfoview.cpp"
     "${GUI_SRC}/views/statcard.cpp" "${GUI_SRC}/views/usersview.cpp"
     "${GUI_QRC}")
-add_gui_test(shell sidebar "${GUI_SRC}/shell/sidebar.cpp" "${GUI_SRC}/app/api.cpp"
+add_gui_test(shell sidebar "${GUI_SRC}/shell/sidebar.cpp" "${GUI_SRC}/ui/handcursor.cpp" "${GUI_SRC}/app/api.cpp"
              "${GUI_SRC}/app/icons.cpp" "${GUI_SRC}/app/theme.cpp" "${GUI_QRC}")
 add_gui_test(shell servertabbar "${GUI_SRC}/shell/servertabbar.cpp"
              "${GUI_SRC}/app/icons.cpp" "${GUI_SRC}/app/theme.cpp" "${GUI_QRC}")
@@ -118,6 +120,7 @@ add_gui_test(shell statusstrip "${GUI_SRC}/shell/statusstrip.cpp" "${GUI_SRC}/ap
 add_gui_test(shell workspace
     "${GUI_SRC}/shell/workspace.cpp"
     "${GUI_SRC}/editor/editortab.cpp"
+    "${GUI_SRC}/ui/handcursor.cpp"
     "${GUI_SRC}/editor/resultpage.cpp"
     "${GUI_SRC}/editor/resultgrid.cpp"
     "${GUI_SRC}/editor/resultmodel.cpp"
@@ -144,7 +147,7 @@ add_gui_test(views dashboardview
     "${GUI_SRC}/ui/switchbox.cpp" "${GUI_SRC}/app/api.cpp" "${GUI_SRC}/app/icons.cpp"
     "${GUI_SRC}/app/theme.cpp" "${GUI_QRC}")
 add_gui_test(views inspectorview "${GUI_SRC}/views/inspectorview.cpp"
-             "${GUI_SRC}/ui/tableutil.cpp" "${GUI_SRC}/ui/fmt.cpp"
+             "${GUI_SRC}/ui/handcursor.cpp" "${GUI_SRC}/ui/tableutil.cpp" "${GUI_SRC}/ui/fmt.cpp"
              "${GUI_SRC}/app/api.cpp" "${GUI_SRC}/app/theme.cpp" "${GUI_QRC}")
 add_gui_test(views panelbase "${GUI_SRC}/views/panelbase.cpp" "${GUI_SRC}/ui/widgets.cpp"
              "${GUI_SRC}/app/theme.cpp" "${GUI_SRC}/app/api.cpp" "${GUI_QRC}")
@@ -153,7 +156,7 @@ add_gui_test(editor sqlhighlighter "${GUI_SRC}/editor/sqlhighlighter.cpp"
 add_gui_test(editor planview "${GUI_SRC}/editor/planview.cpp"
              "${GUI_SRC}/app/theme.cpp" "${GUI_QRC}")
 add_gui_test(editor editortab
-    "${GUI_SRC}/editor/editortab.cpp" "${GUI_SRC}/editor/resultpage.cpp"
+    "${GUI_SRC}/editor/editortab.cpp" "${GUI_SRC}/ui/handcursor.cpp" "${GUI_SRC}/editor/resultpage.cpp"
     "${GUI_SRC}/editor/resultgrid.cpp" "${GUI_SRC}/editor/resultmodel.cpp"
     "${GUI_SRC}/editor/sqleditor.cpp" "${GUI_SRC}/editor/sqlhighlighter.cpp"
     "${GUI_SRC}/editor/sqlscan.cpp" "${GUI_SRC}/editor/planview.cpp"
@@ -180,6 +183,8 @@ target_link_libraries(tst_api PRIVATE Qt6::Network Qt6::Widgets)
 target_link_libraries(tst_backend PRIVATE Qt6::Network)
 target_link_libraries(tst_tableutil PRIVATE Qt6::Widgets)
 target_link_libraries(tst_theme PRIVATE Qt6::Widgets Qt6::Svg)
+target_link_libraries(tst_appstyle PRIVATE Qt6::Widgets)
+target_link_libraries(tst_handcursor PRIVATE Qt6::Widgets)
 target_link_libraries(tst_chart PRIVATE Qt6::Widgets Qt6::Svg)
 target_link_libraries(tst_workspace PRIVATE Qt6::Widgets Qt6::Svg Qt6::Network)
 target_link_libraries(tst_statusstrip PRIVATE Qt6::Widgets Qt6::Svg Qt6::Network)
