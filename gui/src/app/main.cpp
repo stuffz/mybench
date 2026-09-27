@@ -2,6 +2,7 @@
 // spawned alongside and the UI populates when it reports its port.
 #include "app/appstyle.h"
 #include "app/backend.h"
+#include "app/singleinstance.h"
 #include "app/theme.h"
 #include "shell/mainwindow.h"
 
@@ -86,12 +87,51 @@ int main(int argc, char **argv)
     parser.addHelpOption();
     parser.process(app);
 
+    // The headless flags exist to check a build while mybench may already be
+    // open, so they must not hand off to that window.
+    SingleInstance instance(SingleInstance::defaultDir());
+    const bool headless = parser.isSet(shot) || parser.isSet(dump);
+    if (!headless)
+    {
+        switch (instance.claim())
+        {
+        case SingleInstance::Role::Primary:
+            break;
+        case SingleInstance::Role::Unguarded:
+            QMessageBox::warning(
+                nullptr, QObject::tr("mybench"),
+                QObject::tr("Another launch will open a second window instead of "
+                            "raising this one:\n%1")
+                    .arg(instance.errorString())
+            );
+            break;
+        case SingleInstance::Role::Forwarded:
+            return 0;
+        case SingleInstance::Role::Unreachable:
+            QMessageBox::critical(
+                nullptr, QObject::tr("mybench"),
+                QObject::tr("mybench is already running but not responding.")
+            );
+            return 1;
+        }
+    }
+
     app.setStyle(new AppStyle); // QApplication takes ownership
 
     theme::loadFonts();
     theme::apply(theme::defaultApp, 13);
 
     MainWindow w;
+    QObject::connect(
+        &instance, &SingleInstance::activationRequested, &w,
+        [&w]()
+        {
+            w.setWindowState(w.windowState() & ~Qt::WindowMinimized);
+            w.show();
+            w.raise();
+            w.activateWindow();
+        }
+    );
 
     auto *backend = new Backend(&app);
     QObject::connect(backend, &Backend::ready, &w, &MainWindow::onBackendReady);

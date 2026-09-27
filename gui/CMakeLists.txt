@@ -27,6 +27,7 @@ qt_add_executable(mybench
     src/app/theme.cpp
     src/app/api.cpp
     src/app/backend.cpp
+    src/app/singleinstance.cpp
     src/app/icons.cpp
     src/shell/mainwindow.cpp
     src/shell/servertabbar.cpp

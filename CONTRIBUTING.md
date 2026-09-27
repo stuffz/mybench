@@ -19,7 +19,7 @@ One class per file. A file-local helper lives in an anonymous namespace next to 
 
 ## Development
 
-Everything builds in containers — nothing installs on the host beyond docker and [task](https://taskfile.dev). `task --list` shows the full surface; the core loop:
+Everything builds in containers — nothing installs on the host beyond docker and [task](https://taskfile.dev). The Taskfile is the only supported path: no ad-hoc `docker run`, `go test` or lint invocations, since they drift from the tasks (different linter versions give different results) and hide problems in the tasks themselves. Pass task vars as `VAR=value` (`task db:test PORT=4000`) or after `--`. A tool missing from the devcontainer goes into `.devcontainer/Dockerfile`, not around it. `task --list` shows the full surface; the core loop:
 
 ```
 task gui:image          # Qt6 build image (once)
@@ -66,6 +66,14 @@ Rules that cost something to learn:
 - Find widgets by object name. `findChild<T *>(QString())` matches the *first* child of that type and silently follows constructor order, so adding a widget can redirect an unrelated test.
 - Assert relationships and bounds, not pixels, fonts or wall-clock values. Where a pixel does matter, measure it (`QFontMetrics` against the widget's real width) rather than hardcoding one.
 
+## Dependencies
+
+Pin and declare only what is needed; prefer the standard library and existing dependencies. A new dependency needs a reason in the commit body (SQLite was declined in favour of the JSON workspace store).
+
+## UI text
+
+Title Case for named things ("Schema Graph", "Client Connections"), sentence case for descriptions. In dense chrome (status bar, kill buttons) prefer an icon with an instant tooltip over text.
+
 ## C++ style (gui/)
 
 ### Formatting
@@ -102,3 +110,5 @@ Widget-building code is grouped, not streamed. `views/panelbase.cpp` (PanelBase'
 ## Commits
 
 Conventional-commit style, present tense, with the subsystem as scope: `fix(gui): …`, `refactor(backend): …`, `style(gui): …`. The body explains why and what a reader needs to trust the change — measurements, invariants preserved, what was deliberately not done. Mechanical changes (reformats, moves) stay in their own commits, separate from behavior changes. Releases follow [RELEASE.md](RELEASE.md).
+
+Nothing identifying goes into writing (commit messages, release notes, docs, comments, issue text): no client or customer names, no production hostnames, no exact figures measured on a real system (uptime, row or query counts, byte volumes). Generalise ("a live server", "hundreds of thousands of queries a day"). Figures from the repo's own test setup are fine. Every binary stamps the commit SHA, so a leak in a pushed commit costs a history rewrite, a moved tag and a rebuild of every release artifact.
